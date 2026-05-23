@@ -47,11 +47,12 @@ export interface SharePayload {
 }
 
 // Rank scopes so we can do "at least friend" comparisons.
+// Family is the most-trusted tier — it sits inside even Close.
 const RANK: Record<Scope, number> = {
   acquaintance: 0,
   friend: 1,
-  family: 2,
-  close: 3,
+  close: 2,
+  family: 3,
 };
 
 function atLeast(have: Scope, need: Scope): boolean {
@@ -94,8 +95,8 @@ export function applyScope(
 
   switch (intent) {
     case "share_availability": {
-      // Family/close: real start/end. Friend: day-level. Acquaintance: nothing.
-      if (atLeast(scope, "family")) {
+      // Close+/Family: real start/end. Friend: day-level. Acquaintance: nothing.
+      if (atLeast(scope, "close")) {
         out.startsAt = payload.startsAt;
         out.endsAt = payload.endsAt;
         out.precise = true;
@@ -104,12 +105,11 @@ export function applyScope(
         out.endsAt = dayBucket(payload.endsAt);
         out.precise = false;
       }
-      // WHY: pure acquaintances don't get to ping for your schedule.
       return out;
     }
 
     case "share_location": {
-      if (atLeast(scope, "family")) {
+      if (atLeast(scope, "close")) {
         out.location = payload.location;
         out.precise = true;
       } else if (atLeast(scope, "friend")) {
@@ -120,7 +120,7 @@ export function applyScope(
     }
 
     case "share_event": {
-      if (atLeast(scope, "family")) {
+      if (atLeast(scope, "close")) {
         out.startsAt = payload.startsAt;
         out.endsAt = payload.endsAt;
         out.location = payload.location;
@@ -133,34 +133,24 @@ export function applyScope(
         out.text = payload.text;
         out.precise = false;
       } else {
-        // Acquaintance: only a generic "busy" pulse.
         out.text = "busy";
       }
       return out;
     }
 
     case "share_note": {
-      // Notes can contain anything — only close friends see full body.
+      // Close+/Family see title + body. Friend sees title only.
       if (atLeast(scope, "close")) {
         out.noteTitle = payload.noteTitle;
         out.noteBody = payload.noteBody;
-      } else if (atLeast(scope, "family")) {
-        // Family: title + first paragraph (summary-ish).
-        out.noteTitle = payload.noteTitle;
-        const body = payload.noteBody ?? "";
-        out.noteBody = body.split(/\n\s*\n/)[0]?.slice(0, 500) ?? "";
       } else if (atLeast(scope, "friend")) {
-        // Friend: title only.
         out.noteTitle = payload.noteTitle;
       }
-      // Acquaintance gets nothing — note bodies are private by default.
       return out;
     }
 
     case "share_task": {
-      // Tasks can be sensitive (medical, financial). Default to title only
-      // for friends; full details only for family+.
-      if (atLeast(scope, "family")) {
+      if (atLeast(scope, "close")) {
         out.taskTitle = payload.taskTitle;
         out.taskDueAt = payload.taskDueAt;
       } else if (atLeast(scope, "friend")) {
@@ -170,8 +160,8 @@ export function applyScope(
     }
 
     case "share_contact": {
-      // Contact info is escalation-gated. Acquaintances and friends get
-      // nothing automatic — they have to ask the human directly.
+      // Contact info is family-only — the strictest tier. Close gets every-
+      // thing else but contact details still require the closest trust.
       if (atLeast(scope, "family") && payload.contact) {
         out.contact = {
           email: payload.contact.email,

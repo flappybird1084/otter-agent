@@ -2,18 +2,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyScope, type Scope, type Intent, type SharePayload } from "@/lib/scope-policy";
 
+interface VisibleNote {
+  id: string;
+  title: string;
+  slug?: string;
+  kind?: string;
+  share_tier?: string;
+}
+
 interface Friend {
   id: string;
   displayName: string;
   email: string;
   myScope: Scope;
   theirScope: Scope;
+  visibleNotes?: VisibleNote[];
 }
 
-// Order matters — rings go from innermost (close) to outermost (acquaintance).
+// Rings ordered innermost (family — deepest trust) -> outermost (acquaintance).
 const SCOPES: { id: Scope; label: string; blurb: string; hue: number }[] = [
-  { id: "close",        label: "Close",        blurb: "Near-full transparency — exact times, notes, contact info.", hue: 145 },
-  { id: "family",       label: "Family",       blurb: "Exact times and locations; note titles + first paragraph.", hue: 60 },
+  { id: "family",       label: "Family",       blurb: "Most-trusted tier — exact times, full note bodies, contact info.", hue: 60 },
+  { id: "close",        label: "Close",        blurb: "Near-full transparency — exact times, locations, full note bodies.", hue: 145 },
   { id: "friend",       label: "Friend",       blurb: "Day-level availability, blurred locations, note titles only.", hue: 220 },
   { id: "acquaintance", label: "Acquaintance", blurb: "Public-facing facts only; nothing scheduling or note-related.", hue: 280 },
 ];
@@ -61,7 +70,7 @@ export default function SocialView() {
 
   useEffect(() => {
     void (async () => {
-      const r = await fetch("/api/friends");
+      const r = await fetch("/api/social");
       if (r.ok) {
         const j = (await r.json()) as { friends: Friend[] };
         setFriends(j.friends);
@@ -299,34 +308,82 @@ export default function SocialView() {
               );
             })()}
 
-            {/* Friend nodes */}
+            {/* Friend nodes + their visible-to-me notes as orbiting sub-nodes */}
             {positioned.map(({ f, x: lx, y: ly, ringIdx }) => {
               const isSelected = selectedId === f.id;
               const isDragging = drag?.id === f.id;
               const x = isDragging ? drag!.x : lx;
               const y = isDragging ? drag!.y : ly;
               const hue = SCOPES[ringIdx].hue;
+              const notes = (f.visibleNotes || []).slice(0, 6);
               return (
-                <g
-                  key={f.id}
-                  style={{ cursor: isDragging ? "grabbing" : "grab" }}
-                  onPointerDown={(e) => onNodePointerDown(e, f)}
-                  onClick={(e) => { e.stopPropagation(); setSelectedId(f.id); }}
-                >
-                  {/* Glow under node */}
-                  <circle cx={x} cy={y} r={26} fill={`oklch(0.72 0.16 ${hue})`} opacity={isDragging || isSelected ? 0.35 : 0.18} filter="url(#ring-glow)" />
-                  {/* Outer ring color */}
-                  <circle cx={x} cy={y} r={22} fill="var(--bg-elev)" stroke={`oklch(0.72 0.16 ${hue})`} strokeWidth={isSelected || isDragging ? 2.5 : 1.8} />
-                  {/* Initials */}
-                  <text x={x} y={y + 4} textAnchor="middle" style={{
-                    fill: "var(--fg)", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, pointerEvents: "none",
-                  }}>{initialsOf(f.displayName)}</text>
-                  {/* Name label below */}
-                  <text x={x} y={y + 38} textAnchor="middle" style={{
-                    fill: isSelected || isDragging ? "var(--fg)" : "var(--fg-mute)",
-                    fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: isSelected || isDragging ? 600 : 500,
-                    pointerEvents: "none",
-                  }}>{f.displayName}</text>
+                <g key={f.id}>
+                  {/* Orbiting notes (drawn first so the friend node sits on top) */}
+                  {notes.map((n, i) => {
+                    const angle =
+                      (i / Math.max(notes.length, 1)) * Math.PI * 2 -
+                      Math.PI / 2;
+                    const orbitR = 44;
+                    const nx = x + orbitR * Math.cos(angle);
+                    const ny = y + orbitR * Math.sin(angle);
+                    const isPublic = n.share_tier === "public";
+                    return (
+                      <g
+                        key={n.id}
+                        style={{ cursor: "pointer" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (n.slug) {
+                            // We can't open the friend's note in OUR brain, but
+                            // expose the slug so the user knows what's there.
+                            window.open(
+                              `/?note=${encodeURIComponent(n.slug)}`,
+                              "_blank",
+                            );
+                          }
+                        }}
+                      >
+                        <title>{`${n.title} · ${n.share_tier ?? "public"}`}</title>
+                        <line
+                          x1={x} y1={y} x2={nx} y2={ny}
+                          stroke={`oklch(0.55 0.10 ${hue} / .35)`}
+                          strokeWidth={0.8}
+                        />
+                        <circle
+                          cx={nx} cy={ny} r={6}
+                          fill={
+                            isPublic
+                              ? "var(--bg-elev)"
+                              : `oklch(0.72 0.14 ${hue} / .55)`
+                          }
+                          stroke={`oklch(0.78 0.16 ${hue})`}
+                          strokeWidth={1.2}
+                          strokeDasharray={isPublic ? "0" : "0"}
+                        />
+                      </g>
+                    );
+                  })}
+
+                  <g
+                    style={{ cursor: isDragging ? "grabbing" : "grab" }}
+                    onPointerDown={(e) => onNodePointerDown(e, f)}
+                    onClick={(e) => { e.stopPropagation(); setSelectedId(f.id); }}
+                  >
+                    {/* Glow under node */}
+                    <circle cx={x} cy={y} r={26} fill={`oklch(0.72 0.16 ${hue})`} opacity={isDragging || isSelected ? 0.35 : 0.18} filter="url(#ring-glow)" />
+                    {/* Outer ring color */}
+                    <circle cx={x} cy={y} r={22} fill="var(--bg-elev)" stroke={`oklch(0.72 0.16 ${hue})`} strokeWidth={isSelected || isDragging ? 2.5 : 1.8} />
+                    {/* Initials */}
+                    <text x={x} y={y + 4} textAnchor="middle" style={{
+                      fill: "var(--fg)", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, pointerEvents: "none",
+                    }}>{initialsOf(f.displayName)}</text>
+                    {/* Name label below */}
+                    <text x={x} y={y + 38} textAnchor="middle" style={{
+                      fill: isSelected || isDragging ? "var(--fg)" : "var(--fg-mute)",
+                      fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: isSelected || isDragging ? 600 : 500,
+                      pointerEvents: "none",
+                    }}>{f.displayName}</text>
+                  </g>
                 </g>
               );
             })}
@@ -414,6 +471,32 @@ export default function SocialView() {
                     About this scope
                   </div>
                   {SCOPES.find((s) => s.id === selected.myScope)?.blurb}
+                </div>
+
+                {/* Notes from this friend that you can read */}
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 10, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--fg-faint)", fontWeight: 600, marginBottom: 6 }}>
+                    Notes from {selected.displayName.split(" ")[0]} you can read
+                  </div>
+                  {(selected.visibleNotes ?? []).length === 0 ? (
+                    <div style={{ fontSize: 11.5, color: "var(--fg-faint)" }}>
+                      None — they haven&apos;t shared any notes at this scope tier.
+                    </div>
+                  ) : (
+                    <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {(selected.visibleNotes ?? []).map((n) => (
+                        <li key={n.id} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 12 }}>
+                          <span style={{
+                            fontSize: 9, color: "var(--fg-faint)", textTransform: "uppercase",
+                            letterSpacing: ".06em", fontWeight: 600, minWidth: 50,
+                          }}>
+                            {n.share_tier ?? "public"}
+                          </span>
+                          <span style={{ color: "var(--fg)" }}>{n.title}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
             </>

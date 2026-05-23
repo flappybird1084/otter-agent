@@ -73,7 +73,7 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                 },
                 "share_tier": {
                     "type": "string",
-                    "enum": ["private", "friends", "close_friends", "family"],
+                    "enum": ["private", "public", "friends", "close_friends", "family"],
                 },
                 "limit": {"type": "integer", "description": "Max results. Default 20."},
             },
@@ -220,8 +220,9 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
         "description": (
             "Create a new note for the current user. Use when asked to save, jot down, "
             "draft, write, or record something as a note. Choose share_tier deliberately: "
-            "'private' for self-only; 'friends'/'close_friends'/'family' to let those "
-            "tiers' friends read it. If you're in inbox mode (acting on a friend's "
+            "'private' for self-only; 'public' for visible-to-anyone (incl. strangers "
+            "and on the user's social-graph node); 'friends'/'close_friends'/'family' "
+            "for those tiers and above. If you're in inbox mode (acting on a friend's "
             "request) and you omit share_tier, the system picks one keyed to the "
             "requester's scope so they can see what you just made for them."
         ),
@@ -233,7 +234,7 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "share_tier": {
                     "type": "string",
-                    "enum": ["private", "friends", "close_friends", "family"],
+                    "enum": ["private", "public", "friends", "close_friends", "family"],
                 },
                 "kind": {
                     "type": "string",
@@ -268,7 +269,7 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "share_tier": {
                     "type": "string",
-                    "enum": ["private", "friends", "close_friends", "family"],
+                    "enum": ["private", "public", "friends", "close_friends", "family"],
                 },
                 "kind": {
                     "type": "string",
@@ -919,6 +920,8 @@ def _default_share_tier_for_scope(scope: str) -> str:
         return "family"
     if scope == "close_friend":
         return "close_friends"
-    # acquaintance can't see ANY notes; default to 'friends' so the note isn't
-    # private (closer raises later won't have to migrate).
-    return "friends"
+    if scope == "friend":
+        return "friends"
+    # acquaintance can't see scope-tiered notes, so default to public so the
+    # requester at least sees the note they asked for.
+    return "public"
