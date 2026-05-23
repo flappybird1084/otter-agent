@@ -1,0 +1,32 @@
+# OS
+.DS_Store
+
+# editors
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+.next/
+out/
+
+# env files
+.env
+.env.local
+.env.*.local
+*.env.local
+
+# generated stores
+local_store.json
+backend/local_store.json
+
+# tests
+.pytest_cache/
+*.tsbuildinfo
