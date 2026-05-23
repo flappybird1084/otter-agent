@@ -71,8 +71,15 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
     "list_friends": {
         "name": "list_friends",
         "description": (
-            "List the current user's friends and the trust scope assigned to each. "
-            "Always call this before message_friend to confirm the friend and scope."
+            "List the current user's friends with BOTH directions of trust scope:\n"
+            "  - my_scope_of_them: how YOUR USER views the friend (controls what your user "
+            "    would share). The user can adjust this freely.\n"
+            "  - their_scope_of_me: how the friend views YOUR USER — THIS is what governs "
+            "    what the friend's agent will share back when you call message_friend. "
+            "    Pick scope_required no higher than their_scope_of_me; otherwise the call "
+            "    will be rejected. If their_scope_of_me is 'friend', you CANNOT get "
+            "    close_friend-only data from them no matter how high your_scope_of_them is.\n"
+            "Always call this before message_friend / message_friends / set_friend_scope."
         ),
         "parameters": {"type": "object", "properties": {}},
     },
@@ -84,8 +91,13 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
             "there is NO background/async path. Never say 'waiting for X to reply' in your "
             "final answer; if you don't have a reply, you didn't call this tool. "
             "For coordinating across multiple friends, prefer message_friends (parallel batch). "
-            "Include all needed context in 'intent' (e.g. your free windows). The system "
-            "enforces scope_required against the scope the friend has assigned to you."
+            "Include all needed context in 'intent' (e.g. your free windows). "
+            "\n\nSCOPE RULE: scope_required is bounded by THEIR scope of YOU "
+            "(their_scope_of_me from list_friends), NOT your scope of them. If their "
+            "scope of you is 'friend', do not pass scope_required='close_friend' — the "
+            "system will reject it. Match scope_required to the data tier you actually "
+            "need: 'friend' for free/busy + titled calendar, 'close_friend' for notes "
+            "tagged close_friends, 'family' for family-only notes."
         ),
         "parameters": {
             "type": "object",
@@ -369,10 +381,19 @@ async def execute_tool(
         out = []
         for f in rows:
             other = users_db.get_user(f["friend_id"])
+            their_view = friendships_db.get_friendship(
+                owner_id=f["friend_id"], friend_id=actor_user_id,
+            )
+            their_scope = (their_view or {}).get("scope")
             out.append({
                 "friend_id": f["friend_id"],
                 "display_name": (other or {}).get("display_name"),
                 "handle": (other or {}).get("handle"),
+                "my_scope_of_them": f.get("scope"),
+                "their_scope_of_me": their_scope,
+                # max scope_required you can send them through message_friend:
+                "max_message_scope": their_scope,
+                # legacy alias — kept so older prompts/tests keep working
                 "scope": f.get("scope"),
             })
         return out
