@@ -1,12 +1,22 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-interface GNode { id: string; title: string; kind: string }
+interface GNode {
+  id: string;
+  title: string;
+  kind: string;
+  ownerName?: string;     // set on friend nodes (their notes / person)
+  ownerId?: string;       // friend's user id
+  shareTier?: string;     // for friend's notes
+}
 interface GEdge { a: string; b: string }
 interface Sim {
   id: string;
   title: string;
   kind: string;
+  ownerName?: string;
+  ownerId?: string;
+  shareTier?: string;
   x: number;
   y: number;
   vx: number;
@@ -47,11 +57,54 @@ export default function GraphView({ onPick }: { onPick: (id: string) => void }) 
   const [, setTick] = useState(0);
   const rafRef = useRef<number | null>(null);
 
-  // fetch graph data
+  // fetch graph data: your own notes (with [[wiki-link]] edges) PLUS each
+  // friend as a person-node with their visible-to-you notes hanging off.
   useEffect(() => {
-    fetch("/api/notes/graph")
-      .then((r) => (r.ok ? r.json() : { nodes: [], edges: [] }))
-      .then((j: { nodes: GNode[]; edges: GEdge[] }) => setData(j));
+    void (async () => {
+      const [g, s] = await Promise.all([
+        fetch("/api/notes/graph").then((r) =>
+          r.ok ? r.json() : { nodes: [], edges: [] },
+        ),
+        fetch("/api/social").then((r) =>
+          r.ok ? r.json() : { friends: [] },
+        ),
+      ]);
+      const nodes: GNode[] = [...(g.nodes ?? [])];
+      const edges: GEdge[] = [...(g.edges ?? [])];
+      type SocialFriend = {
+        id: string;
+        displayName: string;
+        visibleNotes?: Array<{
+          id: string;
+          title: string;
+          kind?: string;
+          share_tier?: string;
+        }>;
+      };
+      for (const f of (s.friends ?? []) as SocialFriend[]) {
+        const personId = `person_${f.id}`;
+        nodes.push({
+          id: personId,
+          title: f.displayName,
+          kind: "person",
+          ownerId: f.id,
+          ownerName: f.displayName,
+        });
+        for (const n of f.visibleNotes ?? []) {
+          const nid = `${f.id}__${n.id}`;
+          nodes.push({
+            id: nid,
+            title: n.title,
+            kind: n.kind || "note",
+            ownerId: f.id,
+            ownerName: f.displayName,
+            shareTier: n.share_tier,
+          });
+          edges.push({ a: personId, b: nid });
+        }
+      }
+      setData({ nodes, edges });
+    })();
   }, []);
 
   // size observer
@@ -72,11 +125,25 @@ export default function GraphView({ onPick }: { onPick: (id: string) => void }) 
     const prev = new Map(simRef.current.map((s) => [s.id, s]));
     simRef.current = data.nodes.map((n, i) => {
       const existing = prev.get(n.id);
-      if (existing) return { ...existing, title: n.title, kind: n.kind };
+      if (existing) {
+        return {
+          ...existing,
+          title: n.title,
+          kind: n.kind,
+          ownerName: n.ownerName,
+          ownerId: n.ownerId,
+          shareTier: n.shareTier,
+        };
+      }
       const a = (i * Math.PI * 2) / Math.max(data.nodes.length, 1);
       const r = 120 + (i % 3) * 40;
       return {
-        id: n.id, title: n.title, kind: n.kind,
+        id: n.id,
+        title: n.title,
+        kind: n.kind,
+        ownerName: n.ownerName,
+        ownerId: n.ownerId,
+        shareTier: n.shareTier,
         x: cx + Math.cos(a) * r,
         y: cy + Math.sin(a) * r,
         vx: 0, vy: 0, fixed: false,
@@ -336,6 +403,17 @@ export default function GraphView({ onPick }: { onPick: (id: string) => void }) 
                 background: `oklch(0.72 0.16 ${KIND_HUE[selected.kind] ?? 264} / .18)`,
                 borderColor: `oklch(0.72 0.16 ${KIND_HUE[selected.kind] ?? 264} / .38)`,
               }}>{selected.kind}</span>
+              {selected.ownerName && (
+                <span style={{
+                  fontSize: 9.5, letterSpacing: ".06em", textTransform: "uppercase", fontWeight: 700,
+                  padding: "2px 7px", borderRadius: 999, marginLeft: 6,
+                  color: "var(--fg-mute)",
+                  background: "var(--bg-elev)",
+                  border: "1px solid var(--border-soft)",
+                }}>
+                  {selected.ownerName}&apos;s{selected.shareTier ? ` · ${selected.shareTier}` : ""}
+                </span>
+              )}
               <button className="tb-btn" style={{ marginLeft: "auto" }} onClick={() => setSelectedId(null)}>×</button>
             </div>
             <div className="graph-detail-title">{selected.title}</div>
@@ -361,14 +439,30 @@ export default function GraphView({ onPick }: { onPick: (id: string) => void }) 
                   })
               )}
             </div>
-            <button
-              type="button"
-              className="tb-btn primary"
-              style={{ margin: "10px 14px 14px", justifyContent: "center" }}
-              onClick={() => onPick(selected.id)}
-            >
-              Open note →
-            </button>
+            {selected.ownerName ? (
+              <div style={{
+                margin: "10px 14px 14px",
+                padding: "10px 12px",
+                fontSize: 11.5,
+                color: "var(--fg-mute)",
+                background: "var(--bg)",
+                border: "1px solid var(--border-soft)",
+                borderRadius: 8,
+                lineHeight: 1.45,
+              }}>
+                This is one of {selected.ownerName}&apos;s notes. To read the body,
+                chat their agent and ask.
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="tb-btn primary"
+                style={{ margin: "10px 14px 14px", justifyContent: "center" }}
+                onClick={() => onPick(selected.id)}
+              >
+                Open note →
+              </button>
+            )}
           </div>
         )}
       </div>
