@@ -15,11 +15,13 @@ const SHORT: Record<Scope, string> = {
 export function FriendScopeControls({
   ownerId,
   friendships,
+  allFriendships = [],
   onChange,
   defaultCollapsed = false,
 }: {
   ownerId: string;
   friendships: Friendship[];
+  allFriendships?: Friendship[];
   onChange?: (next: Friendship) => void;
   defaultCollapsed?: boolean;
 }) {
@@ -50,14 +52,20 @@ export function FriendScopeControls({
           {friendships.length === 0 && (
             <li className="px-4 py-2 text-xs text-zinc-600">No friends yet.</li>
           )}
-          {friendships.map((f) => (
-            <FriendRow
-              key={f.friend_id}
-              ownerId={ownerId}
-              friendship={f}
-              onChange={onChange}
-            />
-          ))}
+          {friendships.map((f) => {
+            const reciprocal = allFriendships.find(
+              (af) => af.owner_id === f.friend_id && af.friend_id === ownerId,
+            )?.scope;
+            return (
+              <FriendRow
+                key={f.friend_id}
+                ownerId={ownerId}
+                friendship={f}
+                theirScope={reciprocal}
+                onChange={onChange}
+              />
+            );
+          })}
         </ul>
       )}
     </div>
@@ -67,10 +75,12 @@ export function FriendScopeControls({
 function FriendRow({
   ownerId,
   friendship,
+  theirScope,
   onChange,
 }: {
   ownerId: string;
   friendship: Friendship;
+  theirScope?: Scope;
   onChange?: (next: Friendship) => void;
 }) {
   const [scope, setScope] = useState<Scope>(friendship.scope);
@@ -102,13 +112,13 @@ function FriendRow({
       <span className="text-xs text-zinc-300 w-20 truncate">
         {friendship.display_name?.split(" ")[0]}
       </span>
-      <div className="flex gap-1 flex-1">
+      <div className="flex gap-1">
         {SCOPES.map((s) => (
           <button
             key={s}
             onClick={() => update(s)}
             disabled={saving}
-            title={s.replace("_", " ")}
+            title={`Set your view of ${friendship.display_name?.split(" ")[0]} to ${s.replace("_", " ")}`}
             className={
               "px-2 py-0.5 text-[10px] rounded border transition " +
               (s === scope
@@ -120,6 +130,12 @@ function FriendRow({
           </button>
         ))}
       </div>
+      <span
+        className="ml-auto text-[10px] text-zinc-500 whitespace-nowrap"
+        title={`This is the maximum scope you can ask of ${friendship.display_name?.split(" ")[0]}`}
+      >
+        they: <span className="text-zinc-300">{theirScope ? SHORT[theirScope] : "—"}</span>
+      </span>
       {saving && (
         <span className="text-[10px] text-zinc-600 animate-pulse">saving</span>
       )}
