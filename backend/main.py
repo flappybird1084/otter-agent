@@ -30,6 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from agent.loop import run_agent_turn
+from agent.telegram_bridge import get_bridge as get_telegram_bridge, issue_link_code
 from db import users as users_db
 from db import friendships as friendships_db
 from db import calendar as calendar_db
@@ -47,6 +48,30 @@ from db.events import list_events
 from db.store import new_id
 
 app = FastAPI(title="Confluent")
+
+
+@app.on_event("startup")
+async def _telegram_startup() -> None:
+    # Best-effort: if TELEGRAM_BOT_TOKEN is unset the bridge is a no-op, so
+    # this is safe in every environment. Errors during start are logged and
+    # don't take the API down.
+    try:
+        await get_telegram_bridge().start()
+    except Exception as exc:
+        import logging
+        logging.getLogger("uvicorn.error").warning(
+            "telegram bridge start failed: %s", exc,
+        )
+
+
+@app.on_event("shutdown")
+async def _telegram_shutdown() -> None:
+    try:
+        await get_telegram_bridge().stop()
+    except Exception:
+        pass
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -478,6 +503,39 @@ def delete_direct(
 @app.get("/inbox/{user_id}")
 def get_inbox(user_id: str) -> list[dict]:
     return inbox_db.list_inbox_for_user(user_id)
+
+
+# ---------------------------------------------------------------------------
+# Telegram pairing
+# ---------------------------------------------------------------------------
+
+
+class TelegramLinkRequest(BaseModel):
+    user_id: str
+
+
+@app.post("/telegram/link-code")
+def telegram_issue_link_code(req: TelegramLinkRequest) -> dict:
+    """Issue a one-time code the user types into the Telegram bot as
+    `/link CODE` to pair their chat with this account. Valid 5 minutes."""
+    if not users_db.get_user(req.user_id):
+        raise HTTPException(404, "user not found")
+    if not get_telegram_bridge().is_enabled():
+        raise HTTPException(503, "TELEGRAM_BOT_TOKEN is not set on the server")
+    code = issue_link_code(req.user_id)
+    return {"code": code, "expires_in_seconds": 5 * 60}
+
+
+@app.get("/telegram/status/{user_id}")
+def telegram_status(user_id: str) -> dict:
+    user = users_db.get_user(user_id)
+    if not user:
+        raise HTTPException(404, "user not found")
+    return {
+        "bridge_enabled": get_telegram_bridge().is_enabled(),
+        "linked": bool(user.get("telegram_chat_id")),
+        "chat_id": user.get("telegram_chat_id"),
+    }
 
 
 # ---------------------------------------------------------------------------
