@@ -167,12 +167,156 @@ def get_notes(user_id: str) -> list[dict]:
     return notes_db.list_notes(user_id)
 
 
+@app.get("/notes/{user_id}/search")
+def search_notes_endpoint(user_id: str, q: str = "") -> dict:
+    """Search this user's notes; returns the shape avitest1's SearchModal expects."""
+    rows = notes_db.search_notes(user_id, q, limit=30)
+    # search_notes already includes id, title, tags, snippet. Add slug.
+    results = []
+    for r in rows:
+        full = notes_db.get_note(r["id"]) or {}
+        results.append({
+            "id": r["id"],
+            "title": r.get("title"),
+            "slug": full.get("slug"),
+            "kind": full.get("kind"),
+            "snippet": r.get("snippet", ""),
+        })
+    return {"results": results}
+
+
+@app.get("/notes/{user_id}/graph")
+def notes_graph(user_id: str) -> dict:
+    """Build a brain-map graph by parsing [[Wiki-link]] refs in each note body."""
+    import re as _re
+
+    rows = notes_db.list_notes(user_id)
+    nodes = [{"id": n["id"], "title": n.get("title"), "kind": n.get("kind", "note")} for n in rows]
+    by_slug = {n.get("slug"): n["id"] for n in rows if n.get("slug")}
+    by_title_lc = {(n.get("title") or "").lower(): n["id"] for n in rows}
+
+    edges: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    wiki_re = _re.compile(r"\[\[([^\]]+)\]\]")
+    for n in rows:
+        body = notes_db.read_note_body(n["id"])
+        for m in wiki_re.finditer(body):
+            ref = m.group(1).strip()
+            target_id = by_title_lc.get(ref.lower()) or by_slug.get(notes_db.slugify(ref))
+            if not target_id or target_id == n["id"]:
+                continue
+            key = tuple(sorted([n["id"], target_id]))
+            if key in seen:
+                continue
+            seen.add(key)
+            edges.append({"a": key[0], "b": key[1]})
+    return {"nodes": nodes, "edges": edges}
+
+
+@app.get("/notes/{user_id}/by-slug/{slug}")
+def get_note_by_slug_endpoint(user_id: str, slug: str) -> dict:
+    n = notes_db.get_note_by_slug(user_id, slug)
+    if not n:
+        raise HTTPException(404, "note not found")
+    return {**n, "body": notes_db.read_note_body(n["id"])}
+
+
 @app.get("/notes/{user_id}/{note_id}")
 def get_note(user_id: str, note_id: str) -> dict:
     n = notes_db.get_note(note_id)
     if not n or n.get("user_id") != user_id:
         raise HTTPException(404, "note not found")
     return {**n, "body": notes_db.read_note_body(note_id)}
+
+
+class NoteCreate(BaseModel):
+    title: str | None = None
+    slug: str | None = None
+    body: str | None = None
+    kind: str | None = None
+    tags: list[str] | None = None
+    share_tier: str | None = None
+    status: str | None = None
+    due_at: str | None = None
+
+
+@app.post("/notes/{user_id}")
+def create_or_get_note_by_slug(user_id: str, req: NoteCreate) -> dict:
+    """Create a note; if `slug` is given and exists, return it (wiki-link autocreate)."""
+    if req.slug:
+        existing = notes_db.get_note_by_slug(user_id, req.slug)
+        if existing:
+            return {**existing, "body": notes_db.read_note_body(existing["id"])}
+
+    from db.store import get_store as _gs, new_id as _nid
+    title = req.title or (req.slug.replace("-", " ").title() if req.slug else "Untitled")
+    body = req.body if req.body is not None else f"# {title}\n\n"
+    slug = req.slug or notes_db.slugify(title)
+    if notes_db.get_note_by_slug(user_id, slug):
+        slug = f"{slug}-{_nid()[:6]}"
+    note_id = "note_" + _nid()
+    store = _gs()
+    storage_path = store.write_note(user_id, note_id, body)
+    doc = {
+        "id": note_id,
+        "user_id": user_id,
+        "title": title,
+        "slug": slug,
+        "kind": req.kind or "note",
+        "status": req.status,
+        "due_at": req.due_at,
+        "tags": req.tags or [],
+        "share_tier": req.share_tier or "private",
+        "storage_path": storage_path,
+        "updated_at": __import__("datetime").datetime.utcnow().isoformat(),
+    }
+    store.upsert("notes", note_id, doc)
+    return {**doc, "body": body}
+
+
+class NoteUpdate(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    kind: str | None = None
+    tags: list[str] | None = None
+    share_tier: str | None = None
+    status: str | None = None
+    due_at: str | None = None
+
+
+@app.put("/notes/{user_id}/{note_id}")
+def update_note_endpoint(user_id: str, note_id: str, req: NoteUpdate) -> dict:
+    n = notes_db.get_note(note_id)
+    if not n or n.get("user_id") != user_id:
+        raise HTTPException(404, "note not found")
+    from db.store import get_store as _gs
+    store = _gs()
+    patch: dict = {}
+    if req.title is not None:
+        patch["title"] = req.title
+        new_slug = notes_db.slugify(req.title)
+        if new_slug != n.get("slug") and not notes_db.get_note_by_slug(user_id, new_slug):
+            patch["slug"] = new_slug
+    if req.body is not None:
+        store.write_note(user_id, note_id, req.body)
+    for k in ("kind", "tags", "share_tier", "status", "due_at"):
+        v = getattr(req, k)
+        if v is not None:
+            patch[k] = v
+    patch["updated_at"] = __import__("datetime").datetime.utcnow().isoformat()
+    store.update("notes", note_id, patch)
+    updated = store.get("notes", note_id) or {}
+    return {**updated, "body": store.read_note(user_id, note_id)}
+
+
+@app.delete("/notes/{user_id}/{note_id}")
+def delete_note_endpoint(user_id: str, note_id: str) -> dict:
+    n = notes_db.get_note(note_id)
+    if not n or n.get("user_id") != user_id:
+        raise HTTPException(404, "note not found")
+    from db.store import get_store as _gs
+    _gs().delete("notes", note_id)
+    return {"ok": True}
 
 
 @app.get("/calendar/{user_id}")

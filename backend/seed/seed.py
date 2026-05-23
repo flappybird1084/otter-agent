@@ -88,8 +88,8 @@ CALENDAR: list[dict] = [
     {"user_id": "user_maya", "title": "CS161 Lecture", "start": _at(10, 10), "end": _at(10, 11, 30), "visibility": "full"},
 
     # ----- Priya -----
-    {"user_id": "user_priya", "title": "Orgo lab", "start": _at(1, 14), "end": _at(1, 17), "location": "Sapp 105", "visibility": "full"},
-    {"user_id": "user_priya", "title": "MCAT prep", "start": _at(2, 9), "end": _at(2, 11), "visibility": "full"},
+    {"user_id": "user_priya", "title": "Orgo lab", "start": _at(1, 14), "end": _at(1, 17), "location": "Sapp 105", "visibility": "full", "notes": "Bring lab notebook + safety goggles. Synthesis week 4."},
+    {"user_id": "user_priya", "title": "MCAT prep", "start": _at(2, 9), "end": _at(2, 11), "visibility": "full", "notes": "Verbal section, full-length practice."},
     {"user_id": "user_priya", "title": "CS161 Lecture", "start": _at(3, 10), "end": _at(3, 11, 30), "location": "Gates B01", "visibility": "full"},
     {"user_id": "user_priya", "title": "Volunteer (hospital)", "start": _at(3, 18), "end": _at(3, 21), "visibility": "title_and_time"},
     # Wed 15-17 → free, matches a Maya free window
@@ -123,28 +123,28 @@ CALENDAR: list[dict] = [
 
 NOTES: list[dict] = [
     # ----- Maya -----
-    {"id": "note_maya_cs161_midterm", "user_id": "user_maya", "title": "CS161 Midterm Prep", "tags": ["cs161", "midterm", "lecture"], "share_tier": "friends"},
-    {"id": "note_maya_project_ideas", "user_id": "user_maya", "title": "Side project ideas", "tags": ["projects"], "share_tier": "close_friends"},
-    {"id": "note_maya_journal", "user_id": "user_maya", "title": "Journal — this week", "tags": ["journal"], "share_tier": "private"},
-    {"id": "note_maya_todo", "user_id": "user_maya", "title": "This week's TODOs", "tags": ["todo"], "share_tier": "close_friends"},
-    {"id": "note_maya_cs109_review", "user_id": "user_maya", "title": "CS109 — probability review", "tags": ["cs109"], "share_tier": "friends"},
-    {"id": "note_maya_recipe", "user_id": "user_maya", "title": "Mom's dal recipe", "tags": ["recipe"], "share_tier": "family"},
+    {"id": "note_maya_cs161_midterm", "user_id": "user_maya", "title": "CS161 Midterm Prep", "slug": "cs161-midterm-prep", "kind": "project", "tags": ["cs161", "midterm", "lecture"], "share_tier": "friends"},
+    {"id": "note_maya_project_ideas", "user_id": "user_maya", "title": "Side project ideas", "slug": "side-project-ideas", "kind": "project", "tags": ["projects"], "share_tier": "close_friends"},
+    {"id": "note_maya_journal", "user_id": "user_maya", "title": "Journal — this week", "slug": "journal-this-week", "kind": "daily", "tags": ["journal"], "share_tier": "private"},
+    {"id": "note_maya_todo", "user_id": "user_maya", "title": "This week's TODOs", "slug": "this-weeks-todos", "kind": "task", "status": "doing", "tags": ["todo"], "share_tier": "close_friends"},
+    {"id": "note_maya_cs109_review", "user_id": "user_maya", "title": "CS109 — probability review", "slug": "cs109-probability-review", "kind": "note", "tags": ["cs109"], "share_tier": "friends"},
+    {"id": "note_maya_recipe", "user_id": "user_maya", "title": "Mom's dal recipe", "slug": "moms-dal-recipe", "kind": "note", "tags": ["recipe"], "share_tier": "family"},
 
     # ----- Priya -----
-    {"id": "note_priya_cs161_midterm", "user_id": "user_priya", "title": "CS161 Midterm — clean notes", "tags": ["cs161", "midterm"], "share_tier": "close_friends"},
-    {"id": "note_priya_orgo", "user_id": "user_priya", "title": "Orgo mechanisms cheat sheet", "tags": ["orgo"], "share_tier": "friends"},
-    {"id": "note_priya_mcat", "user_id": "user_priya", "title": "MCAT plan", "tags": ["mcat"], "share_tier": "close_friends"},
-    {"id": "note_priya_journal", "user_id": "user_priya", "title": "Journal", "tags": ["journal"], "share_tier": "private"},
-    {"id": "note_priya_volunteer", "user_id": "user_priya", "title": "Hospital volunteer hours", "tags": ["volunteer"], "share_tier": "friends"},
-    {"id": "note_priya_cs161_dp", "user_id": "user_priya", "title": "Dynamic programming — worked examples", "tags": ["cs161", "dp"], "share_tier": "close_friends"},
+    {"id": "note_priya_cs161_midterm", "user_id": "user_priya", "title": "CS161 Midterm — clean notes", "slug": "cs161-midterm-clean-notes", "kind": "project", "tags": ["cs161", "midterm"], "share_tier": "close_friends"},
+    {"id": "note_priya_orgo", "user_id": "user_priya", "title": "Orgo mechanisms cheat sheet", "slug": "orgo-mechanisms-cheat-sheet", "kind": "note", "tags": ["orgo"], "share_tier": "friends"},
+    {"id": "note_priya_mcat", "user_id": "user_priya", "title": "MCAT plan", "slug": "mcat-plan", "kind": "project", "tags": ["mcat"], "share_tier": "close_friends"},
+    {"id": "note_priya_journal", "user_id": "user_priya", "title": "Journal", "slug": "journal", "kind": "daily", "tags": ["journal"], "share_tier": "private"},
+    {"id": "note_priya_volunteer", "user_id": "user_priya", "title": "Hospital volunteer hours", "slug": "hospital-volunteer-hours", "kind": "task", "tags": ["volunteer"], "share_tier": "friends"},
+    {"id": "note_priya_cs161_dp", "user_id": "user_priya", "title": "Dynamic programming — worked examples", "slug": "dynamic-programming-worked-examples", "kind": "note", "tags": ["cs161", "dp"], "share_tier": "close_friends"},
 
     # ----- Devon -----
-    {"id": "note_devon_setlist", "user_id": "user_devon", "title": "Open mic setlist", "tags": ["music"], "share_tier": "friends"},
-    {"id": "note_devon_recording", "user_id": "user_devon", "title": "Recording session plan", "tags": ["music", "recording"], "share_tier": "close_friends"},
-    {"id": "note_devon_lyrics", "user_id": "user_devon", "title": "Lyrics — draft", "tags": ["music", "lyrics"], "share_tier": "private"},
-    {"id": "note_devon_essay", "user_id": "user_devon", "title": "Essay outline", "tags": ["writing"], "share_tier": "close_friends"},
-    {"id": "note_devon_packing", "user_id": "user_devon", "title": "Packing list — tour", "tags": ["travel"], "share_tier": "friends"},
-    {"id": "note_devon_journal", "user_id": "user_devon", "title": "Journal", "tags": ["journal"], "share_tier": "private"},
+    {"id": "note_devon_setlist", "user_id": "user_devon", "title": "Open mic setlist", "slug": "open-mic-setlist", "kind": "project", "tags": ["music"], "share_tier": "friends"},
+    {"id": "note_devon_recording", "user_id": "user_devon", "title": "Recording session plan", "slug": "recording-session-plan", "kind": "project", "tags": ["music", "recording"], "share_tier": "close_friends"},
+    {"id": "note_devon_lyrics", "user_id": "user_devon", "title": "Lyrics — draft", "slug": "lyrics-draft", "kind": "note", "tags": ["music", "lyrics"], "share_tier": "private"},
+    {"id": "note_devon_essay", "user_id": "user_devon", "title": "Essay outline", "slug": "essay-outline", "kind": "project", "tags": ["writing"], "share_tier": "close_friends"},
+    {"id": "note_devon_packing", "user_id": "user_devon", "title": "Packing list — tour", "slug": "packing-list-tour", "kind": "task", "tags": ["travel"], "share_tier": "friends"},
+    {"id": "note_devon_journal", "user_id": "user_devon", "title": "Journal", "slug": "journal", "kind": "daily", "tags": ["journal"], "share_tier": "private"},
 ]
 
 

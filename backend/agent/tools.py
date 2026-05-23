@@ -235,6 +235,19 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                     "type": "string",
                     "enum": ["private", "friends", "close_friends", "family"],
                 },
+                "kind": {
+                    "type": "string",
+                    "enum": ["note", "daily", "project", "task", "person"],
+                    "description": "Category. 'task' for todos, 'daily' for journals, 'project' for ongoing work, 'person' for who-is-X notes, 'note' for everything else (default).",
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Optional status label (e.g. 'todo', 'doing', 'done'). Free-form.",
+                },
+                "due_at": {
+                    "type": "string",
+                    "description": "Optional ISO timestamp for when this is due.",
+                },
             },
             "required": ["title", "body"],
         },
@@ -242,8 +255,9 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
     "update_note": {
         "name": "update_note",
         "description": (
-            "Update an existing note's body, title, tags, or share_tier. Use "
-            "search_notes first to find the note id. Only fields you pass change."
+            "Update an existing note's body, title, tags, share_tier, kind, status, "
+            "or due_at. Use search_notes first to find the note id. Only fields you "
+            "pass change."
         ),
         "parameters": {
             "type": "object",
@@ -256,6 +270,12 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                     "type": "string",
                     "enum": ["private", "friends", "close_friends", "family"],
                 },
+                "kind": {
+                    "type": "string",
+                    "enum": ["note", "daily", "project", "task", "person"],
+                },
+                "status": {"type": "string"},
+                "due_at": {"type": "string"},
             },
             "required": ["note_id"],
         },
@@ -302,6 +322,10 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                 "start_iso": {"type": "string"},
                 "end_iso": {"type": "string"},
                 "location": {"type": "string"},
+                "notes": {
+                    "type": "string",
+                    "description": "Optional freeform description shown on the event popup.",
+                },
                 "visibility": {
                     "type": "string",
                     "enum": ["title_and_time", "busy_only", "full"],
@@ -700,6 +724,7 @@ async def execute_tool(
         }
 
     if name == "create_note":
+        from db.notes import slugify, VALID_KINDS, get_note_by_slug
         store = get_store()
         note_id = "note_" + new_id()
         body = args.get("body", "")
@@ -707,18 +732,28 @@ async def execute_tool(
         tags = args.get("tags", [])
         share_tier = args.get("share_tier")
         if not share_tier:
-            # In inbox mode, default the new note's share_tier so the requesting
-            # friend can actually read what was made for them. Private would
-            # mean nobody, which defeats the point of "create this on my behalf".
             if viewer_scope:
                 share_tier = _default_share_tier_for_scope(viewer_scope)
             else:
                 share_tier = "private"
+        kind = args.get("kind") or "note"
+        if kind not in VALID_KINDS:
+            kind = "note"
+        status = args.get("status")
+        due_at = args.get("due_at")
+        slug = slugify(title)
+        # Dedupe slug per user
+        if get_note_by_slug(actor_user_id, slug):
+            slug = f"{slug}-{new_id()[:6]}"
         storage_path = store.write_note(actor_user_id, note_id, body)
         store.upsert("notes", note_id, {
             "id": note_id,
             "user_id": actor_user_id,
             "title": title,
+            "slug": slug,
+            "kind": kind,
+            "status": status,
+            "due_at": due_at,
             "tags": tags,
             "share_tier": share_tier,
             "storage_path": storage_path,
@@ -733,15 +768,24 @@ async def execute_tool(
         return {"ok": True, "note_id": note_id, "title": title}
 
     if name == "update_note":
+        from db.notes import VALID_KINDS, slugify, get_note_by_slug
         store = get_store()
         note_id = args.get("note_id", "")
         existing = store.get("notes", note_id)
         if not existing or existing.get("user_id") != actor_user_id:
             return {"error": "not_found", "message": "Note not found or not yours."}
         patch = {"updated_at": utcnow_iso()}
-        for k in ("title", "tags", "share_tier"):
+        for k in ("title", "tags", "share_tier", "status", "due_at"):
             if k in args and args[k] is not None:
                 patch[k] = args[k]
+        if args.get("kind") in VALID_KINDS:
+            patch["kind"] = args["kind"]
+        # If title changes and the slug doesn't exist or matches the OLD title,
+        # regenerate slug. Don't overwrite custom slugs.
+        if "title" in patch:
+            new_slug = slugify(patch["title"])
+            if new_slug != existing.get("slug") and not get_note_by_slug(actor_user_id, new_slug):
+                patch["slug"] = new_slug
         if "body" in args and args["body"] is not None:
             store.write_note(actor_user_id, note_id, args["body"])
         store.update("notes", note_id, patch)
@@ -812,6 +856,7 @@ async def execute_tool(
             "start": args["start_iso"],
             "end": args["end_iso"],
             "location": args.get("location"),
+            "notes": args.get("notes"),
             "visibility": args.get("visibility", "full"),
             "status": "confirmed",
         })
