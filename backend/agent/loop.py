@@ -32,6 +32,11 @@ from .tools import SELF_TOOLS, INBOX_TOOLS, DIRECT_TOOLS, execute_tool
 
 MAX_STEPS = 8
 
+# Hard cap on conversation history seeded into the model. Each "turn pair"
+# is one user message + one agent reply. 20 pairs keeps multi-turn context
+# (~last hour of chat) without ballooning the prompt forever.
+HISTORY_TURN_PAIRS = 20
+
 
 async def run_agent_turn(
     user_id: str,
@@ -105,6 +110,10 @@ async def run_agent_turn(
     turns: list[Turn] = []
     if mode == "user_chat":
         history = list_chat_messages_for_conversation(user_id, conversation_id)
+        # Cap to the most recent N turn pairs so very long threads stay within
+        # the prompt budget. Slice on raw messages (not paired) since role
+        # ordering may not be strictly alternating after errors.
+        history = history[-(HISTORY_TURN_PAIRS * 2):]
         for m in history:
             if m["role"] == "user":
                 turns.append(Turn(role="user", content=m["content"]))

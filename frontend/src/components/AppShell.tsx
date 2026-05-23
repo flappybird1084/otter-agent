@@ -7,6 +7,7 @@ import SocialView from "./SocialView";
 import CalendarView from "./CalendarView";
 import GraphView from "./GraphView";
 import SearchModal from "./SearchModal";
+import TelegramLinkButton from "./TelegramLinkButton";
 
 const LEFT_DEFAULT = 240;
 const RIGHT_DEFAULT = 360;
@@ -308,6 +309,7 @@ export default function AppShell({
         </div>
         <div className="tb-spacer"></div>
         <div className="tb-right">
+          <TelegramLinkButton />
           <button className="tb-btn" onClick={() => setSearchOpen(true)}>
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
               <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.4"/>
