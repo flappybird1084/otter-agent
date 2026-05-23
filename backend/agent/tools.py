@@ -330,9 +330,14 @@ SELF_TOOLS = [
 INBOX_TOOLS = [
     "get_current_time",
     "search_notes", "list_notes_filtered", "read_note",
-    "read_calendar",
+    "create_note", "update_note", "delete_note",
+    "read_calendar", "create_calendar_event", "delete_calendar_event",
     "list_friends",
     "reply_to_agent",
+    # Deliberately omitted:
+    #   message_friend / message_friends — prevents cascading agent loops
+    #   set_friend_scope — relationship trust shouldn't be set by a remote agent
+    #   propose_event — would write to the requesting agent's calendar; out of scope
 ]
 
 
