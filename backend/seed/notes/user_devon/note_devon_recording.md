@@ -8,3 +8,5 @@ Saturday, 2-6pm at the back-house studio.
 - If time: re-do the bridge of "Highway 9" — feels rushed
 
 Engineer: Sam. Backup: Cal.
+
+See [[Open mic setlist]] for the live versions; check [[Lyrics — draft]] for the latest Lithium Sky lines.

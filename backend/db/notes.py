@@ -1,6 +1,30 @@
 from __future__ import annotations
 
+import re
+
 from .store import get_store
+
+
+def slugify(s: str) -> str:
+    s = (s or "").lower().strip()
+    s = re.sub(r"[^a-z0-9\s-]", "", s)
+    s = re.sub(r"\s+", "-", s)
+    s = re.sub(r"-+", "-", s).strip("-")
+    return (s[:80]) or "untitled"
+
+
+VALID_KINDS = ("note", "daily", "project", "task", "person")
+
+
+def get_note_by_slug(user_id: str, slug: str) -> dict | None:
+    rows = get_store().query(
+        "notes",
+        where=[("user_id", "==", user_id)],
+    )
+    for r in rows:
+        if r.get("slug") == slug:
+            return r
+    return None
 
 
 def list_notes(user_id: str) -> list[dict]:
