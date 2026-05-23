@@ -86,6 +86,7 @@ export default function UserHome({ params }: { params: { userId: string } }) {
               <FriendScopeControls
                 ownerId={userId}
                 friendships={friendships}
+                allFriendships={allFriendships}
                 onChange={(next) => {
                   setFriendships((prev) =>
                     prev.map((p) =>
@@ -114,6 +115,7 @@ export default function UserHome({ params }: { params: { userId: string } }) {
                     meId={userId}
                     friendId={popoverFriendId}
                     friendships={friendships}
+                    allFriendships={allFriendships}
                     allUsers={allUsers}
                     onClose={() => setPopoverFriendId(null)}
                     onChange={(next) => {
