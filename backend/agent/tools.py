@@ -344,6 +344,93 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
             "required": ["event_id"],
         },
     },
+    "action_start_task": {
+        "name": "action_start_task",
+        "description": (
+            "Delegate a real-world action to ActionLayer. The `goal` is a single "
+            "plain-English sentence describing what should happen end-to-end "
+            "(\"Email priya@example.com from Maya asking if she can meet "
+            "Wednesday at 3pm — keep it short and friendly.\"). ActionLayer's "
+            "operator executes it. Use ONLY for things the agent's own tools "
+            "can't do — sending real emails, filling external forms, etc. NEVER "
+            "use it for stuff already covered by message_friend / create_note / "
+            "create_calendar_event. ALWAYS call confirm_action FIRST with a one-"
+            "sentence summary of the goal — tasks consume the user's quota and "
+            "can't be undone after the operator starts. Returns ticket_id, "
+            "status, and human-readable summary."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "goal": {
+                    "type": "string",
+                    "description": "Plain-English description of what should happen. Include who, what, when, and any tone/length constraints. 1-3 sentences max.",
+                },
+                "target_url": {
+                    "type": "string",
+                    "description": "Optional URL if the task is about a specific website/form.",
+                },
+                "max_budget_usd": {
+                    "type": "number",
+                    "description": "Optional spend cap in USD. Omit for free/no-cost tasks.",
+                },
+            },
+            "required": ["goal"],
+        },
+    },
+    "action_get_task": {
+        "name": "action_get_task",
+        "description": (
+            "Get the current status of an ActionLayer task by ticket_id. Use "
+            "to answer 'what happened with that email I sent?' or 'is the "
+            "form filled out yet?'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"ticket_id": {"type": "string"}},
+            "required": ["ticket_id"],
+        },
+    },
+    "action_reply_to_task": {
+        "name": "action_reply_to_task",
+        "description": (
+            "Reply to an in-progress ActionLayer task — the operator may need "
+            "more information mid-flight (an account password, a tone "
+            "preference, etc). Confirm the answer with the user via ask_user "
+            "first if you're not sure."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticket_id": {"type": "string"},
+                "message": {"type": "string"},
+            },
+            "required": ["ticket_id", "message"],
+        },
+    },
+    "action_cancel_task": {
+        "name": "action_cancel_task",
+        "description": (
+            "Cancel an in-flight ActionLayer task. Use when the user changes "
+            "their mind or you realize the task was misplaced. Confirm with "
+            "the user via confirm_action first if the task is already in "
+            "progress."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {"ticket_id": {"type": "string"}},
+            "required": ["ticket_id"],
+        },
+    },
+    "action_quota": {
+        "name": "action_quota",
+        "description": (
+            "Check how many ActionLayer tasks the user has remaining this "
+            "billing cycle. Call before action_start_task if you're not sure "
+            "the user can afford another one."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
 }
 
 
@@ -354,6 +441,11 @@ SELF_TOOLS = [
     "read_calendar", "create_calendar_event", "delete_calendar_event",
     "list_friends", "set_friend_scope",
     "message_friend", "message_friends", "propose_event",
+    # ActionLayer task delegation — SELF_TOOLS only. A friend's agent shouldn't
+    # burn the receiver's task quota or trigger real-world actions on the
+    # receiver's behalf.
+    "action_start_task", "action_get_task", "action_reply_to_task",
+    "action_cancel_task", "action_quota",
 ]
 INBOX_TOOLS = [
     "get_current_time",
@@ -512,6 +604,7 @@ async def execute_tool(
                 "friend_id": f["friend_id"],
                 "display_name": (other or {}).get("display_name"),
                 "handle": (other or {}).get("handle"),
+                "email": (other or {}).get("email"),
                 "my_scope_of_them": f.get("scope"),
                 "their_scope_of_me": their_scope,
                 # max scope_required you can send them through message_friend:
@@ -885,6 +978,96 @@ async def execute_tool(
             },
         )
         return {"ok": True, "event_id": event_id}
+
+    if name.startswith("action_"):
+        from integrations.actionlayer import get_client, ActionLayerError
+        client = get_client()
+        if not client.is_enabled():
+            log_event(
+                type="action_skipped",
+                actor_user_id=actor_user_id,
+                conversation_id=conversation_id,
+                payload={"summary": f"{name} skipped — ActionLayer not configured", "tool": name},
+            )
+            return {
+                "error": "actionlayer_disabled",
+                "message": (
+                    "ActionLayer is not configured on this server (ACTIONLAYER_API_KEY unset). "
+                    "Tell the user this capability is unavailable; do NOT pretend the action happened."
+                ),
+            }
+        try:
+            if name == "action_start_task":
+                goal = (args.get("goal") or "").strip()
+                if not goal:
+                    return {"error": "missing_goal"}
+                resp = await client.start_task(
+                    goal=goal,
+                    target_url=args.get("target_url"),
+                    max_budget_usd=args.get("max_budget_usd"),
+                )
+                ticket_id = (resp or {}).get("ticket_id") or (resp or {}).get("id")
+                status = (resp or {}).get("status")
+                log_event(
+                    type="action_task_started",
+                    actor_user_id=actor_user_id,
+                    conversation_id=conversation_id,
+                    payload={
+                        "summary": f"ActionLayer task: {_shorten(goal, 80)}",
+                        "ticket_id": ticket_id,
+                        "status": status,
+                    },
+                )
+                return {"ok": True, "ticket_id": ticket_id, "status": status, "result": resp}
+            if name == "action_get_task":
+                resp = await client.get_task(args["ticket_id"])
+                return {"ok": True, "task": resp}
+            if name == "action_reply_to_task":
+                resp = await client.reply_to_task(args["ticket_id"], args.get("message", ""))
+                log_event(
+                    type="action_task_replied",
+                    actor_user_id=actor_user_id,
+                    conversation_id=conversation_id,
+                    payload={
+                        "summary": f"Replied to task {args['ticket_id'][:10]}",
+                        "ticket_id": args["ticket_id"],
+                    },
+                )
+                return {"ok": True, "result": resp}
+            if name == "action_cancel_task":
+                resp = await client.cancel_task(args["ticket_id"])
+                log_event(
+                    type="action_task_cancelled",
+                    actor_user_id=actor_user_id,
+                    conversation_id=conversation_id,
+                    payload={
+                        "summary": f"Cancelled task {args['ticket_id'][:10]}",
+                        "ticket_id": args["ticket_id"],
+                    },
+                )
+                return {"ok": True, "result": resp}
+            if name == "action_quota":
+                me = await client.whoami()
+                return {
+                    "tasks_remaining": (me or {}).get("tasks_remaining"),
+                    "tasks_purchased": (me or {}).get("tasks_purchased"),
+                    "plan": (me or {}).get("plan"),
+                    "cycle_resets_at": (me or {}).get("cycle_resets_at"),
+                    "workspace": (me or {}).get("workspace_name"),
+                }
+            return {"error": "unknown_action_tool", "message": name}
+        except ActionLayerError as exc:
+            log_event(
+                type="action_error",
+                actor_user_id=actor_user_id,
+                conversation_id=conversation_id,
+                payload={"summary": f"ActionLayer {exc.status}: {_shorten(exc.body, 80)}", "tool": name},
+            )
+            return {
+                "error": "actionlayer_http_error",
+                "status": exc.status,
+                "message": str(exc),
+            }
 
     if name == "delete_calendar_event":
         store = get_store()
