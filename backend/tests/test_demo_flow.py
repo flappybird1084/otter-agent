@@ -116,6 +116,53 @@ async def test_new_tools_smoke():
 
 
 @pytest.mark.asyncio
+async def test_create_note_inbox_default_share_tier():
+    """Notes created in inbox mode should default to a share_tier the requester can see."""
+    from agent.tools import execute_tool
+    from db import notes as notes_db
+
+    # close_friend scope → close_friends tier
+    res = await execute_tool(
+        "create_note",
+        {"title": "Todo from Maya", "body": "buy milk"},
+        actor_user_id="user_priya",
+        conversation_id="conv_t",
+        viewer_scope="close_friend",
+    )
+    note = notes_db.get_note(res["note_id"])
+    assert note["share_tier"] == "close_friends"
+
+    # friend scope → friends tier
+    res = await execute_tool(
+        "create_note",
+        {"title": "From friend", "body": "."},
+        actor_user_id="user_priya",
+        conversation_id="conv_t",
+        viewer_scope="friend",
+    )
+    assert notes_db.get_note(res["note_id"])["share_tier"] == "friends"
+
+    # self mode (no viewer_scope) keeps the private default
+    res = await execute_tool(
+        "create_note",
+        {"title": "Self note", "body": "."},
+        actor_user_id="user_priya",
+        conversation_id="conv_t",
+    )
+    assert notes_db.get_note(res["note_id"])["share_tier"] == "private"
+
+    # explicit share_tier overrides the inbox default
+    res = await execute_tool(
+        "create_note",
+        {"title": "Explicit", "body": ".", "share_tier": "family"},
+        actor_user_id="user_priya",
+        conversation_id="conv_t",
+        viewer_scope="close_friend",
+    )
+    assert notes_db.get_note(res["note_id"])["share_tier"] == "family"
+
+
+@pytest.mark.asyncio
 async def test_list_notes_filtered():
     from agent.tools import execute_tool
 

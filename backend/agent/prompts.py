@@ -80,6 +80,7 @@ Rules:
 - You may NOT call message_friend / message_friends (prevents cascading agent loops).
 - You may NOT call set_friend_scope (relationship trust isn't set by remote agents).
 - When you DO take a mutating action (create/update/delete), say so clearly in your summary so the sender knows what happened on your side.
+- When you create_note in response to a friend's request, set share_tier so the requester can actually see it (their scope "{scope}" → at minimum 'friends'-tier; higher scopes can be higher tiers). The system will pick a reasonable default if you omit share_tier — DON'T pass 'private' or the requester will be locked out of their own request.
 
 Today is {_today()}.
 """

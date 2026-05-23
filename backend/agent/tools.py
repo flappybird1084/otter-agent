@@ -219,8 +219,11 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
         "name": "create_note",
         "description": (
             "Create a new note for the current user. Use when asked to save, jot down, "
-            "draft, write, or record something as a note. Choose share_tier carefully — "
-            "'private' is the safe default."
+            "draft, write, or record something as a note. Choose share_tier deliberately: "
+            "'private' for self-only; 'friends'/'close_friends'/'family' to let those "
+            "tiers' friends read it. If you're in inbox mode (acting on a friend's "
+            "request) and you omit share_tier, the system picks one keyed to the "
+            "requester's scope so they can see what you just made for them."
         ),
         "parameters": {
             "type": "object",
@@ -702,7 +705,15 @@ async def execute_tool(
         body = args.get("body", "")
         title = args["title"]
         tags = args.get("tags", [])
-        share_tier = args.get("share_tier", "private")
+        share_tier = args.get("share_tier")
+        if not share_tier:
+            # In inbox mode, default the new note's share_tier so the requesting
+            # friend can actually read what was made for them. Private would
+            # mean nobody, which defeats the point of "create this on my behalf".
+            if viewer_scope:
+                share_tier = _default_share_tier_for_scope(viewer_scope)
+            else:
+                share_tier = "private"
         storage_path = store.write_note(actor_user_id, note_id, body)
         store.upsert("notes", note_id, {
             "id": note_id,
@@ -842,3 +853,15 @@ async def execute_tool(
 def _shorten(s: str, n: int) -> str:
     s = (s or "").strip().replace("\n", " ")
     return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def _default_share_tier_for_scope(scope: str) -> str:
+    """Highest share_tier the given viewer scope can see, used as the inbox-mode
+    default when a friend's agent creates a note on the user's behalf."""
+    if scope == "family":
+        return "family"
+    if scope == "close_friend":
+        return "close_friends"
+    # acquaintance can't see ANY notes; default to 'friends' so the note isn't
+    # private (closer raises later won't have to migrate).
+    return "friends"
