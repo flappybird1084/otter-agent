@@ -109,12 +109,10 @@ export function applyScope(
     }
 
     case "share_location": {
+      // Close+ only: exact location. Friend tier no longer gets location.
       if (atLeast(scope, "close")) {
         out.location = payload.location;
         out.precise = true;
-      } else if (atLeast(scope, "friend")) {
-        out.location = blurLocation(payload.location);
-        out.precise = false;
       }
       return out;
     }
@@ -127,7 +125,7 @@ export function applyScope(
         out.text = payload.text;
         out.precise = true;
       } else if (atLeast(scope, "friend")) {
-        // Friends learn there IS an event but not where/exact-when.
+        // Friend tier: title + day-bucket times, NO location.
         out.startsAt = dayBucket(payload.startsAt);
         out.endsAt = dayBucket(payload.endsAt);
         out.text = payload.text;
@@ -139,22 +137,19 @@ export function applyScope(
     }
 
     case "share_note": {
-      // Close+/Family see title + body. Friend sees title only.
+      // Close+ only. Friend tier does NOT see note titles or bodies.
       if (atLeast(scope, "close")) {
         out.noteTitle = payload.noteTitle;
         out.noteBody = payload.noteBody;
-      } else if (atLeast(scope, "friend")) {
-        out.noteTitle = payload.noteTitle;
       }
       return out;
     }
 
     case "share_task": {
+      // Close+ only. Friend tier does NOT see tasks.
       if (atLeast(scope, "close")) {
         out.taskTitle = payload.taskTitle;
         out.taskDueAt = payload.taskDueAt;
-      } else if (atLeast(scope, "friend")) {
-        out.taskTitle = payload.taskTitle;
       }
       return out;
     }
