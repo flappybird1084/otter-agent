@@ -7,6 +7,28 @@ interface FriendRow {
   displayName: string;
   email: string;
   myScope: string;
+  theirScope: string;
+}
+
+const SCOPE_RANK: Record<string, number> = {
+  acquaintance: 0,
+  friend: 1,
+  close: 2,
+  family: 3,
+};
+const SCOPE_LABEL: Record<string, string> = {
+  acquaintance: "acquaintance",
+  friend: "friend",
+  close: "close",
+  family: "family",
+};
+
+function effectiveScope(mine: string, theirs: string): string {
+  // The lower of the two — whichever direction is tighter governs what data
+  // actually flows in either direction.
+  const a = SCOPE_RANK[mine] ?? 0;
+  const b = SCOPE_RANK[theirs] ?? 0;
+  return a <= b ? mine : theirs;
 }
 
 const GROUPS: { id: string; label: string; kinds: string[] }[] = [
@@ -264,24 +286,12 @@ export default function Sidebar({
                 <span className="count" style={{ fontFamily: "var(--font-mono)" }}>you</span>
               </button>
               {friends.map((f) => (
-                <button
-                  type="button"
+                <FriendChatRow
                   key={f.id}
-                  className={`sb-item ${chatTarget === f.id ? "active" : ""}`}
-                  onClick={() => onChatWith(f.id)}
-                  title={`Chat with ${f.displayName}'s agent`}
-                >
-                  <span className="icon">
-                    <span style={{
-                      width: 14, height: 14, borderRadius: "50%",
-                      background: "var(--accent)", color: "var(--bg)",
-                      display: "inline-flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 8, fontWeight: 700,
-                    }}>{f.displayName.slice(0, 1).toUpperCase()}</span>
-                  </span>
-                  <span className="title-text">{f.displayName}</span>
-                  <span className="count" style={{ fontFamily: "var(--font-mono)" }}>{f.myScope}</span>
-                </button>
+                  friend={f}
+                  active={chatTarget === f.id}
+                  onChatWith={onChatWith}
+                />
               ))}
             </div>
           </>
@@ -297,5 +307,88 @@ export default function Sidebar({
         <button type="button" className="signout" onClick={onLogout}>Sign out</button>
       </div>
     </aside>
+  );
+}
+
+function FriendChatRow({
+  friend,
+  active,
+  onChatWith,
+}: {
+  friend: FriendRow;
+  active: boolean;
+  onChatWith: (id: string) => void;
+}) {
+  const [hover, setHover] = useState(false);
+  const eff = effectiveScope(friend.myScope, friend.theirScope);
+  return (
+    <div
+      style={{ position: "relative" }}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
+      <button
+        type="button"
+        className={`sb-item ${active ? "active" : ""}`}
+        onClick={() => onChatWith(friend.id)}
+      >
+        <span className="icon">
+          <span style={{
+            width: 14, height: 14, borderRadius: "50%",
+            background: "var(--accent)", color: "var(--bg)",
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            fontSize: 8, fontWeight: 700,
+          }}>{friend.displayName.slice(0, 1).toUpperCase()}</span>
+        </span>
+        <span className="title-text">{friend.displayName}</span>
+        <span className="count" style={{ fontFamily: "var(--font-mono)" }}>
+          {SCOPE_LABEL[eff] ?? eff}
+        </span>
+      </button>
+      {hover && (
+        <div
+          style={{
+            position: "absolute",
+            right: 8,
+            top: "calc(100% + 4px)",
+            zIndex: 30,
+            minWidth: 200,
+            padding: "8px 10px",
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            boxShadow: "0 8px 20px rgba(0,0,0,.35)",
+            fontSize: 11,
+            color: "var(--fg-mute)",
+            lineHeight: 1.5,
+            pointerEvents: "none",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>Your scope for them</span>
+            <span style={{ color: "var(--fg)", fontFamily: "var(--font-mono)" }}>
+              {SCOPE_LABEL[friend.myScope] ?? friend.myScope}
+            </span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>Their scope for you</span>
+            <span style={{ color: "var(--fg)", fontFamily: "var(--font-mono)" }}>
+              {SCOPE_LABEL[friend.theirScope] ?? friend.theirScope}
+            </span>
+          </div>
+          <div
+            style={{
+              marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border-soft)",
+              display: "flex", justifyContent: "space-between", gap: 8,
+            }}
+          >
+            <span>Effective scope</span>
+            <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
+              {SCOPE_LABEL[eff] ?? eff}
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
