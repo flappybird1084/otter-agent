@@ -8,6 +8,7 @@ The tool loop is identical. Only the system prompt and toolset differ.
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Literal
 
 from db import users as users_db
@@ -92,7 +93,12 @@ async def run_agent_turn(
 
     nudge_count = 0
     for step in range(MAX_STEPS):
-        response: LLMResponse = llm.generate(system=system, turns=turns, tool_names=tool_names)
+        # The Vertex SDK is sync (grpc). Run it in a thread so we don't block the
+        # event loop while waiting on Gemini — other HTTP requests (calendar
+        # polling, events feed, etc) need to keep flowing during a chat turn.
+        response: LLMResponse = await asyncio.to_thread(
+            llm.generate, system=system, turns=turns, tool_names=tool_names
+        )
 
         # If the model returns absolutely nothing (no text, no tool calls), nudge it
         # once. Most often this happens in inbox mode after a tool call when the model
