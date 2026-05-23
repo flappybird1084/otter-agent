@@ -17,6 +17,7 @@ load_dotenv()
 
 from db.store import get_store
 from db.friendships import friendship_id
+from agent.timeutil import now_pacific
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +64,8 @@ FRIENDSHIPS = [
 # ---------------------------------------------------------------------------
 
 def _at(day_offset: int, hour: int, minute: int = 0) -> str:
-    base = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    """Anchor at *Pacific* midnight so hour=10 means 10 AM PDT, not UTC."""
+    base = now_pacific().replace(hour=0, minute=0, second=0, microsecond=0)
     return (base + timedelta(days=day_offset, hours=hour, minutes=minute)).isoformat()
 
 

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from .timeutil import today_pacific_human
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Include weekday so the model doesn't have to derive it.
+    return today_pacific_human()
 
 
 def system_prompt_user_chat(user: dict) -> str:
