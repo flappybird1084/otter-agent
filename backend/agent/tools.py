@@ -367,6 +367,18 @@ INBOX_TOOLS = [
     #   propose_event — would write to the requesting agent's calendar; out of scope
 ]
 
+# Direct-chat mode: a friend chats with this user's agent through their UI.
+# Same as inbox tools, but the reply is free text (no reply_to_agent).
+DIRECT_TOOLS = [
+    "get_current_time",
+    "search_notes", "list_notes_filtered", "read_note",
+    "create_note", "update_note", "delete_note",
+    "read_calendar", "create_calendar_event", "delete_calendar_event",
+    "list_friends",
+    # Deliberately omitted: same reasons as INBOX_TOOLS + no reply_to_agent
+    # since the recipient produces a normal chat reply, not a structured reply.
+]
+
 
 # Lazy Vertex declarations
 class _LazyDeclarations(dict):

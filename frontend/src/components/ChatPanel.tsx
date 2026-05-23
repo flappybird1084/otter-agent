@@ -77,12 +77,19 @@ export default function ChatPanel({
   target: string;
   setTarget: (id: string) => void;
 }) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Per-target chat threads. "self" + each friend id maps to its own array.
+  const [threads, setThreads] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [me, setMe] = useState<{ id: string; displayName: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const messages = threads[target] || [];
+
+  function setMessages(updater: (cur: Message[]) => Message[]) {
+    setThreads((all) => ({ ...all, [target]: updater(all[target] || []) }));
+  }
 
   const names = useMemo(() => {
     const out: Record<string, string> = {};
@@ -105,9 +112,47 @@ export default function ChatPanel({
     })();
   }, []);
 
+  // When target changes, lazily fetch that thread's history.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const r = await fetch(`/api/chat?target=${encodeURIComponent(target)}`);
+        if (!r.ok) return;
+        const j = (await r.json()) as {
+          messages: Array<{
+            id: string;
+            role: "user" | "assistant";
+            content: string;
+            targetFriendId?: string;
+          }>;
+        };
+        const loaded: Message[] = j.messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          targetFriendId: m.targetFriendId,
+        }));
+        setThreads((all) => ({ ...all, [target]: loaded }));
+      } catch {
+        // noop
+      }
+    })();
+  }, [target]);
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
+
+  async function clearThread() {
+    if (busy) return;
+    try {
+      await fetch(`/api/chat?target=${encodeURIComponent(target)}`, {
+        method: "DELETE",
+      });
+    } catch {
+      // ignore
+    }
+    setThreads((all) => ({ ...all, [target]: [] }));
+  }
 
   async function send() {
     const msg = input.trim();
@@ -212,6 +257,25 @@ export default function ChatPanel({
         <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-faint)" }}>
           → {targetLabel}
         </span>
+        <button
+          type="button"
+          onClick={clearThread}
+          disabled={busy || messages.length === 0}
+          title="Clear this thread"
+          style={{
+            marginLeft: 10,
+            background: "transparent",
+            border: "1px solid var(--border, #2a2a30)",
+            color: "var(--fg-mute, #999)",
+            fontSize: 10,
+            padding: "2px 8px",
+            borderRadius: 4,
+            cursor: busy || messages.length === 0 ? "not-allowed" : "pointer",
+            opacity: busy || messages.length === 0 ? 0.4 : 1,
+          }}
+        >
+          Clear
+        </button>
       </div>
 
       <div className="chat-targets">

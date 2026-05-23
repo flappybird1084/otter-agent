@@ -35,7 +35,14 @@ from db import friendships as friendships_db
 from db import calendar as calendar_db
 from db import notes as notes_db
 from db import inbox as inbox_db
-from db.chat import write_chat_message, list_chat_messages, list_chat_messages_for_conversation
+from db.chat import (
+    write_chat_message,
+    list_chat_messages,
+    list_chat_messages_for_conversation,
+    list_direct_chat_messages,
+    delete_direct_chat,
+    delete_self_chat,
+)
 from db.events import list_events
 from db.store import new_id
 
@@ -334,6 +341,84 @@ def get_chat(user_id: str, limit: int = 50, conversation_id: str | None = None) 
     if conversation_id:
         return list_chat_messages_for_conversation(user_id, conversation_id)
     return list_chat_messages(user_id, limit=limit)
+
+
+@app.delete("/chat/{user_id}")
+def delete_chat(user_id: str, conversation_id: str | None = None) -> dict:
+    n = delete_self_chat(user_id, conversation_id)
+    return {"ok": True, "deleted": n}
+
+
+# ---------------------------------------------------------------------------
+# Direct chat: user talks straight to a friend's agent (not via their own
+# agent). Scope governs what the friend's agent shares.
+# ---------------------------------------------------------------------------
+
+
+class DirectChatRequest(BaseModel):
+    sender_user_id: str
+    recipient_user_id: str
+    content: str
+    conversation_id: str | None = None
+
+
+@app.post("/direct-chat")
+async def direct_chat(req: DirectChatRequest) -> dict:
+    sender = users_db.get_user(req.sender_user_id)
+    recipient = users_db.get_user(req.recipient_user_id)
+    if not sender or not recipient:
+        raise HTTPException(404, "user not found")
+
+    # Reciprocal scope check — does the RECIPIENT actually have the sender as
+    # any kind of friend? If they're not friends at all, no chat is possible.
+    friendship = friendships_db.get_friendship(
+        owner_id=req.recipient_user_id, friend_id=req.sender_user_id,
+    )
+    if not friendship:
+        raise HTTPException(
+            403,
+            f"{recipient.get('display_name')} hasn't added you, so their agent won't talk to you.",
+        )
+
+    conv_id = req.conversation_id or new_id("dconv")
+    # Persist the sender's message under the (sender, target=recipient) thread.
+    write_chat_message(
+        req.sender_user_id, "user", req.content, conv_id,
+        target_user_id=req.recipient_user_id,
+    )
+    reply = await run_agent_turn(
+        user_id=req.recipient_user_id,
+        conversation_id=conv_id,
+        input=req.content,
+        mode="agent_direct",
+        sender_user_id=req.sender_user_id,
+    )
+    return {
+        "reply": reply if isinstance(reply, str) else str(reply),
+        "conversation_id": conv_id,
+        "scope": friendship.get("scope"),
+    }
+
+
+@app.get("/direct-chat/{sender_user_id}/{recipient_user_id}")
+def get_direct_chat(
+    sender_user_id: str,
+    recipient_user_id: str,
+    conversation_id: str | None = None,
+) -> list[dict]:
+    return list_direct_chat_messages(
+        sender_user_id, recipient_user_id, conversation_id,
+    )
+
+
+@app.delete("/direct-chat/{sender_user_id}/{recipient_user_id}")
+def delete_direct(
+    sender_user_id: str,
+    recipient_user_id: str,
+    conversation_id: str | None = None,
+) -> dict:
+    n = delete_direct_chat(sender_user_id, recipient_user_id, conversation_id)
+    return {"ok": True, "deleted": n}
 
 
 @app.get("/inbox/{user_id}")

@@ -124,8 +124,56 @@ export const api = {
         ? `/chat/${userId}?conversation_id=${encodeURIComponent(conversationId)}`
         : `/chat/${userId}`,
     ),
+  deleteChat: (userId: string, conversationId?: string | null) =>
+    backend<{ ok: true; deleted: number }>(
+      conversationId
+        ? `/chat/${userId}?conversation_id=${encodeURIComponent(conversationId)}`
+        : `/chat/${userId}`,
+      { method: "DELETE" },
+    ),
   getEvents: (limit = 60) =>
     backend<BackendAgentEvent[]>(`/events?limit=${limit}`),
+
+  // Direct chat (user → another user's agent, bypasses your own agent)
+  postDirectChat: (
+    senderUserId: string,
+    recipientUserId: string,
+    content: string,
+    conversationId?: string | null,
+  ) =>
+    backend<{ reply: string; conversation_id: string; scope: string }>(
+      `/direct-chat`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          sender_user_id: senderUserId,
+          recipient_user_id: recipientUserId,
+          content,
+          conversation_id: conversationId || null,
+        }),
+      },
+    ),
+  getDirectChat: (
+    senderUserId: string,
+    recipientUserId: string,
+    conversationId?: string | null,
+  ) =>
+    backend<BackendChatMessage[]>(
+      conversationId
+        ? `/direct-chat/${senderUserId}/${recipientUserId}?conversation_id=${encodeURIComponent(conversationId)}`
+        : `/direct-chat/${senderUserId}/${recipientUserId}`,
+    ),
+  deleteDirectChat: (
+    senderUserId: string,
+    recipientUserId: string,
+    conversationId?: string | null,
+  ) =>
+    backend<{ ok: true; deleted: number }>(
+      conversationId
+        ? `/direct-chat/${senderUserId}/${recipientUserId}?conversation_id=${encodeURIComponent(conversationId)}`
+        : `/direct-chat/${senderUserId}/${recipientUserId}`,
+      { method: "DELETE" },
+    ),
 };
 
 export interface BackendNote {

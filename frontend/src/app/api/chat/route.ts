@@ -1,38 +1,21 @@
 /**
- * Synchronous-chat → fake-SSE adapter.
+ * Chat proxy.
  *
- * The avitest1 ChatPanel speaks SSE with the events:
- *   text / tool_use / tool_result / agent_message / error / done
+ *   POST   {message, friendId?} -> SSE
+ *     friendId set  -> direct chat with that friend's agent (POST /direct-chat)
+ *     friendId nul  -> self chat with your own agent       (POST /chat)
+ *   GET    ?target=self|<friendId>  -> history for that thread (camel-cased)
+ *   DELETE ?target=self|<friendId>  -> clears thread + the conv-id cookie
  *
- * Our FastAPI /chat is one-shot. After it returns, we re-fetch
- * /events?limit=... and replay the matching conversation_id as SSE
- * so the inline tool chips and a2a strips still light up.
+ * conversationId lives in a per-target cookie so the avitest1 ChatPanel,
+ * which doesn't track it, still gets a stable thread across turns.
  */
 import { cookies } from "next/headers";
 import { requireUser } from "@/lib/auth";
-import { api, type BackendAgentEvent } from "@/lib/api-server";
+import { api, type BackendAgentEvent, type BackendChatMessage } from "@/lib/api-server";
 
 function convCookieName(userId: string, target: string): string {
-  // Per (me, chat-target) so chats with different friends don't bleed history.
   return `confluent_conv_${userId}_${target}`;
-}
-
-export async function DELETE(req: Request) {
-  let user;
-  try {
-    user = await requireUser();
-  } catch {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401,
-      headers: { "content-type": "application/json" },
-    });
-  }
-  const target = new URL(req.url).searchParams.get("target") || "self";
-  const c = await cookies();
-  c.delete(convCookieName(user.id, target));
-  return new Response(JSON.stringify({ ok: true }), {
-    headers: { "content-type": "application/json" },
-  });
 }
 
 type StreamEvent =
@@ -85,6 +68,10 @@ function asTuple(e: BackendAgentEvent): StreamEvent | null {
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────
+// POST: a turn (self or direct)
+// ──────────────────────────────────────────────────────────────────────
+
 export async function POST(req: Request) {
   let user;
   try {
@@ -109,48 +96,52 @@ export async function POST(req: Request) {
     });
   }
 
-  // Wrap a message-to-friend into an intent the user's agent can route via
-  // message_friend (still goes through OUR agent loop so scope enforces).
-  const userInput = body.friendId
-    ? `Please message ${body.friendId}'s agent (via message_friend) with: "${message}"`
-    : message;
-
-  // Conversation continuity: client doesn't track conv id, so we keep one
-  // cookie per (user, chat-target). First turn -> backend mints one, we
-  // store it. Subsequent turns reuse it so the agent has history.
   const cookieJar = await cookies();
   const target = body.friendId || "self";
   const convCookie = convCookieName(user.id, target);
   const priorConvId =
     body.conversationId || cookieJar.get(convCookie)?.value || null;
 
-  // Do the backend call BEFORE building the Response so we can include
-  // Set-Cookie in the response headers. (Cookies written via cookies().set
-  // after streaming begins are silently dropped in Next.js.)
-  let collected: StreamEvent[] = [];
+  const collected: StreamEvent[] = [];
   let convId: string | null = priorConvId;
   try {
-    const r = await api.postChat(user.id, userInput, priorConvId);
-    convId = r.conversation_id;
-    try {
-      const events = await api.getEvents(80);
-      const inOrder = events
-        .filter((e) => e.conversation_id === r.conversation_id)
-        .sort((a, b) =>
-          (a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1,
-        );
-      for (const e of inOrder) {
-        const out = asTuple(e);
-        if (out) collected.push(out);
+    if (body.friendId) {
+      // Direct mode — the friend's agent runs against the sender
+      const r = await api.postDirectChat(
+        user.id,
+        body.friendId,
+        message,
+        priorConvId,
+      );
+      convId = r.conversation_id;
+      // Direct chats don't emit tool_use events into the shared /events feed
+      // in a way we want to surface here; just stream the final text.
+      collected.push({ type: "text", delta: r.reply });
+      collected.push({ type: "done" });
+    } else {
+      // Self mode — your own agent
+      const r = await api.postChat(user.id, message, priorConvId);
+      convId = r.conversation_id;
+      try {
+        const events = await api.getEvents(80);
+        const inOrder = events
+          .filter((e) => e.conversation_id === r.conversation_id)
+          .sort((a, b) =>
+            (a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1,
+          );
+        for (const e of inOrder) {
+          const out = asTuple(e);
+          if (out) collected.push(out);
+        }
+      } catch {
+        // not fatal
       }
-    } catch {
-      // not fatal — text still flows
+      collected.push({
+        type: "text",
+        delta: typeof r.reply === "string" ? r.reply : String(r.reply),
+      });
+      collected.push({ type: "done" });
     }
-    collected.push({
-      type: "text",
-      delta: typeof r.reply === "string" ? r.reply : String(r.reply),
-    });
-    collected.push({ type: "done" });
   } catch (err) {
     collected.push({
       type: "error",
@@ -175,8 +166,6 @@ export async function POST(req: Request) {
     connection: "keep-alive",
   });
   if (convId) {
-    // 7-day persistence. Non-HttpOnly because the cookie is per-tab convenience,
-    // not a security boundary (the user picker isn't authenticated either).
     const oneWeek = 60 * 60 * 24 * 7;
     headers.append(
       "set-cookie",
@@ -185,4 +174,90 @@ export async function POST(req: Request) {
   }
 
   return new Response(stream, { headers });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// GET: history for a thread
+// ──────────────────────────────────────────────────────────────────────
+
+interface UiChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  targetFriendId?: string;
+  createdAt: string;
+}
+
+export async function GET(req: Request) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch {
+    return new Response(JSON.stringify({ messages: [] }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const url = new URL(req.url);
+  const target = url.searchParams.get("target") || "self";
+  const cookieJar = await cookies();
+  const convId = cookieJar.get(convCookieName(user.id, target))?.value || null;
+
+  let rows: BackendChatMessage[] = [];
+  try {
+    rows =
+      target === "self"
+        ? await api.getChat(user.id, convId)
+        : await api.getDirectChat(user.id, target, convId);
+  } catch {
+    rows = [];
+  }
+
+  const messages: UiChatMessage[] = rows.map((r) => ({
+    id: r.id,
+    role: r.role === "user" ? "user" : "assistant",
+    content: r.content,
+    targetFriendId: target === "self" ? undefined : target,
+    createdAt: r.created_at,
+  }));
+
+  return new Response(
+    JSON.stringify({ messages, conversationId: convId, target }),
+    { headers: { "content-type": "application/json" } },
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// DELETE: clear a thread (and the cookie) for a specific target
+// ──────────────────────────────────────────────────────────────────────
+
+export async function DELETE(req: Request) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const url = new URL(req.url);
+  const target = url.searchParams.get("target") || "self";
+  const cookieJar = await cookies();
+  const convId = cookieJar.get(convCookieName(user.id, target))?.value || null;
+
+  try {
+    if (target === "self") {
+      await api.deleteChat(user.id, convId);
+    } else {
+      await api.deleteDirectChat(user.id, target, convId);
+    }
+  } catch {
+    // ignore — we still drop the cookie below
+  }
+
+  cookieJar.delete(convCookieName(user.id, target));
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: { "content-type": "application/json" },
+  });
 }
