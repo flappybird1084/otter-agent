@@ -8,6 +8,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { SocialGraph } from "@/components/SocialGraph";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { CalendarView } from "@/components/CalendarView";
+import { FriendScopeControls } from "@/components/FriendScopeControls";
 
 type RightTab = "calendar" | "friends";
 
@@ -78,6 +79,17 @@ export default function UserHome({ params }: { params: { userId: string } }) {
             <CalendarView userId={userId} />
           ) : (
             <>
+              <FriendScopeControls
+                ownerId={userId}
+                friendships={friendships}
+                onChange={(next) =>
+                  setFriendships((prev) =>
+                    prev.map((p) =>
+                      p.friend_id === next.friend_id ? next : p,
+                    ),
+                  )
+                }
+              />
               <div className="flex-1 min-h-0 border-b border-zinc-900">
                 <SocialGraph
                   users={allUsers}
@@ -86,7 +98,7 @@ export default function UserHome({ params }: { params: { userId: string } }) {
                   meId={userId}
                 />
               </div>
-              <div className="h-72 min-h-72 overflow-hidden">
+              <div className="h-60 min-h-60 overflow-hidden">
                 <ActivityFeed events={events} users={allUsers} />
               </div>
             </>
