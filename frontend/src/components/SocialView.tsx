@@ -21,9 +21,9 @@ interface Friend {
 
 // Rings ordered innermost (family — deepest trust) -> outermost (acquaintance).
 const SCOPES: { id: Scope; label: string; blurb: string; hue: number }[] = [
-  { id: "family",       label: "Family",       blurb: "Most-trusted tier — exact times, full note bodies, contact info.", hue: 60 },
-  { id: "close",        label: "Close",        blurb: "Near-full transparency — exact times, locations, full note bodies.", hue: 145 },
-  { id: "friend",       label: "Friend",       blurb: "Day-level availability, blurred locations, note titles only.", hue: 220 },
+  { id: "family",       label: "Family",       blurb: "Most-trusted tier — everything Close gets, plus contact info (email, phone).", hue: 60 },
+  { id: "close",        label: "Close",        blurb: "Full availability + locations, note titles + bodies, tasks. Almost everything.", hue: 145 },
+  { id: "friend",       label: "Friend",       blurb: "Day-level free/busy + event names only. No location, no notes, no tasks.", hue: 220 },
   { id: "acquaintance", label: "Acquaintance", blurb: "Public-facing facts only; nothing scheduling or note-related.", hue: 280 },
 ];
 
