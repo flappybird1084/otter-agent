@@ -1,0 +1,132 @@
+// Confluent — Prisma schema (SQLite)
+// Note: FTS5 virtual table is created via raw SQL in seed.ts / search route.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  displayName   String
+  createdAt     DateTime @default(now())
+
+  notes          Note[]
+  friendshipsA   Friendship[]   @relation("FriendshipA")
+  friendshipsB   Friendship[]   @relation("FriendshipB")
+  scopesOwned    FriendScope[]  @relation("ScopeOwner")
+  scopesOnMe     FriendScope[]  @relation("ScopeFriend")
+  agentSent      AgentMessage[] @relation("AgentFrom")
+  agentReceived  AgentMessage[] @relation("AgentTo")
+  chatTurns      ChatTurn[]
+  calendarEvents CalendarEvent[]
+  telegramLink   TelegramLink?
+  approvals      ApprovalRequest[]
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  slug      String
+  bodyMd    String
+  kind      String   @default("note") // note | task | daily | person
+  status    String?                    // open | done | snoozed (for tasks)
+  dueAt     DateTime?
+  filePath  String?
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, slug])
+  @@index([userId, kind])
+}
+
+model Friendship {
+  id        String @id @default(cuid())
+  userAId   String
+  userBId   String
+  status    String @default("accepted") // pending | accepted | blocked
+
+  userA User @relation("FriendshipA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB User @relation("FriendshipB", fields: [userBId], references: [id], onDelete: Cascade)
+
+  @@unique([userAId, userBId])
+}
+
+model FriendScope {
+  id       String @id @default(cuid())
+  ownerId  String // who is granting the scope
+  friendId String // about whom
+  scope    String // acquaintance | friend | family | close
+
+  owner  User @relation("ScopeOwner",  fields: [ownerId],  references: [id], onDelete: Cascade)
+  friend User @relation("ScopeFriend", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, friendId])
+}
+
+model AgentMessage {
+  id               String   @id @default(cuid())
+  fromUserId       String
+  toUserId         String
+  intent           String
+  payloadSent      String
+  payloadDelivered String
+  createdAt        DateTime @default(now())
+
+  fromUser User @relation("AgentFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("AgentTo",   fields: [toUserId],   references: [id], onDelete: Cascade)
+}
+
+model ChatTurn {
+  id          String   @id @default(cuid())
+  userId      String
+  role        String   // user | assistant | tool
+  content     String
+  toolCalls   String?
+  toolResults String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model CalendarEvent {
+  id       String   @id @default(cuid())
+  userId   String
+  title    String
+  startsAt DateTime
+  endsAt   DateTime
+  notes    String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startsAt])
+}
+
+model TelegramLink {
+  id     String @id @default(cuid())
+  userId String @unique
+  chatId String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ApprovalRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  kind      String
+  payload   String
+  status    String   @default("pending") // pending | approved | rejected
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
