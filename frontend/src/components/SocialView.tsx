@@ -308,82 +308,34 @@ export default function SocialView() {
               );
             })()}
 
-            {/* Friend nodes + their visible-to-me notes as orbiting sub-nodes */}
+            {/* Friend nodes */}
             {positioned.map(({ f, x: lx, y: ly, ringIdx }) => {
               const isSelected = selectedId === f.id;
               const isDragging = drag?.id === f.id;
               const x = isDragging ? drag!.x : lx;
               const y = isDragging ? drag!.y : ly;
               const hue = SCOPES[ringIdx].hue;
-              const notes = (f.visibleNotes || []).slice(0, 6);
               return (
-                <g key={f.id}>
-                  {/* Orbiting notes (drawn first so the friend node sits on top) */}
-                  {notes.map((n, i) => {
-                    const angle =
-                      (i / Math.max(notes.length, 1)) * Math.PI * 2 -
-                      Math.PI / 2;
-                    const orbitR = 44;
-                    const nx = x + orbitR * Math.cos(angle);
-                    const ny = y + orbitR * Math.sin(angle);
-                    const isPublic = n.share_tier === "public";
-                    return (
-                      <g
-                        key={n.id}
-                        style={{ cursor: "pointer" }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (n.slug) {
-                            // We can't open the friend's note in OUR brain, but
-                            // expose the slug so the user knows what's there.
-                            window.open(
-                              `/?note=${encodeURIComponent(n.slug)}`,
-                              "_blank",
-                            );
-                          }
-                        }}
-                      >
-                        <title>{`${n.title} · ${n.share_tier ?? "public"}`}</title>
-                        <line
-                          x1={x} y1={y} x2={nx} y2={ny}
-                          stroke={`oklch(0.55 0.10 ${hue} / .35)`}
-                          strokeWidth={0.8}
-                        />
-                        <circle
-                          cx={nx} cy={ny} r={6}
-                          fill={
-                            isPublic
-                              ? "var(--bg-elev)"
-                              : `oklch(0.72 0.14 ${hue} / .55)`
-                          }
-                          stroke={`oklch(0.78 0.16 ${hue})`}
-                          strokeWidth={1.2}
-                          strokeDasharray={isPublic ? "0" : "0"}
-                        />
-                      </g>
-                    );
-                  })}
-
-                  <g
-                    style={{ cursor: isDragging ? "grabbing" : "grab" }}
-                    onPointerDown={(e) => onNodePointerDown(e, f)}
-                    onClick={(e) => { e.stopPropagation(); setSelectedId(f.id); }}
-                  >
-                    {/* Glow under node */}
-                    <circle cx={x} cy={y} r={26} fill={`oklch(0.72 0.16 ${hue})`} opacity={isDragging || isSelected ? 0.35 : 0.18} filter="url(#ring-glow)" />
-                    {/* Outer ring color */}
-                    <circle cx={x} cy={y} r={22} fill="var(--bg-elev)" stroke={`oklch(0.72 0.16 ${hue})`} strokeWidth={isSelected || isDragging ? 2.5 : 1.8} />
-                    {/* Initials */}
-                    <text x={x} y={y + 4} textAnchor="middle" style={{
-                      fill: "var(--fg)", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, pointerEvents: "none",
-                    }}>{initialsOf(f.displayName)}</text>
-                    {/* Name label below */}
-                    <text x={x} y={y + 38} textAnchor="middle" style={{
-                      fill: isSelected || isDragging ? "var(--fg)" : "var(--fg-mute)",
-                      fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: isSelected || isDragging ? 600 : 500,
-                      pointerEvents: "none",
-                    }}>{f.displayName}</text>
-                  </g>
+                <g
+                  key={f.id}
+                  style={{ cursor: isDragging ? "grabbing" : "grab" }}
+                  onPointerDown={(e) => onNodePointerDown(e, f)}
+                  onClick={(e) => { e.stopPropagation(); setSelectedId(f.id); }}
+                >
+                  {/* Glow under node */}
+                  <circle cx={x} cy={y} r={26} fill={`oklch(0.72 0.16 ${hue})`} opacity={isDragging || isSelected ? 0.35 : 0.18} filter="url(#ring-glow)" />
+                  {/* Outer ring color */}
+                  <circle cx={x} cy={y} r={22} fill="var(--bg-elev)" stroke={`oklch(0.72 0.16 ${hue})`} strokeWidth={isSelected || isDragging ? 2.5 : 1.8} />
+                  {/* Initials */}
+                  <text x={x} y={y + 4} textAnchor="middle" style={{
+                    fill: "var(--fg)", fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: 700, pointerEvents: "none",
+                  }}>{initialsOf(f.displayName)}</text>
+                  {/* Name label below */}
+                  <text x={x} y={y + 38} textAnchor="middle" style={{
+                    fill: isSelected || isDragging ? "var(--fg)" : "var(--fg-mute)",
+                    fontFamily: "var(--font-sans)", fontSize: 11, fontWeight: isSelected || isDragging ? 600 : 500,
+                    pointerEvents: "none",
+                  }}>{f.displayName}</text>
                 </g>
               );
             })}
