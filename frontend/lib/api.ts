@@ -26,6 +26,7 @@ export const api = {
   listUsers: () => request<User[]>("/users"),
   getUser: (id: string) => request<User>(`/users/${id}`),
   getFriends: (id: string) => request<Friendship[]>(`/friends/${id}`),
+  getAllFriendships: () => request<Friendship[]>(`/friendships`),
   setScope: (ownerId: string, friendId: string, scope: Scope) =>
     request<{ ok: true }>(`/friends/${ownerId}/scope`, {
       method: "POST",
