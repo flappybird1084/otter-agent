@@ -79,10 +79,12 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
         "name": "message_friend",
         "description": (
             "Send a structured intent to a friend's agent and wait for their reply. "
-            "The friend's agent will process the request using its own calendar/notes "
-            "according to the trust scope. Include all needed context in 'intent' "
-            "(e.g. your free windows). The system enforces scope_required against the "
-            "scope the friend has assigned to you."
+            "FULLY SYNCHRONOUS: when this returns, the reply (or error) is in your hand — "
+            "there is NO background/async path. Never say 'waiting for X to reply' in your "
+            "final answer; if you don't have a reply, you didn't call this tool. "
+            "For coordinating across multiple friends, prefer message_friends (parallel batch). "
+            "Include all needed context in 'intent' (e.g. your free windows). The system "
+            "enforces scope_required against the scope the friend has assigned to you."
         ),
         "parameters": {
             "type": "object",
@@ -96,6 +98,33 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                 },
             },
             "required": ["friend_id", "intent", "scope_required"],
+        },
+    },
+    "message_friends": {
+        "name": "message_friends",
+        "description": (
+            "Send the same intent to MULTIPLE friends' agents IN PARALLEL and wait until "
+            "every one has either replied or errored. Use whenever the user mentions more "
+            "than one person ('A and B', 'the group', 'my study crew'). Returns one entry "
+            "per friend so your summary can reflect ALL of them. FULLY SYNCHRONOUS — when "
+            "this returns, every friend's reply is in your hand. Never say 'still waiting "
+            "for X' in your final answer."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "friend_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of friend user ids from list_friends.",
+                },
+                "intent": {"type": "string"},
+                "scope_required": {
+                    "type": "string",
+                    "enum": ["acquaintance", "friend", "close_friend", "family"],
+                },
+            },
+            "required": ["friend_ids", "intent", "scope_required"],
         },
     },
     "propose_event": {
@@ -248,7 +277,7 @@ SELF_TOOLS = [
     "search_notes", "read_note", "create_note", "update_note", "delete_note",
     "read_calendar", "create_calendar_event", "delete_calendar_event",
     "list_friends", "set_friend_scope",
-    "message_friend", "propose_event",
+    "message_friend", "message_friends", "propose_event",
 ]
 INBOX_TOOLS = [
     "get_current_time",
@@ -464,6 +493,39 @@ async def execute_tool(
             "from": friend_id,
             "summary": (reply or {}).get("summary"),
             "data": (reply or {}).get("reply_data") or (reply or {}).get("data"),
+        }
+
+    if name == "message_friends":
+        if a2a_dispatch is None:
+            return {"error": "a2a_unavailable", "message": "Agent-to-agent dispatch not wired."}
+        friend_ids = args.get("friend_ids") or []
+        intent = args.get("intent", "")
+        scope_required = args.get("scope_required", "friend")
+        if not friend_ids:
+            return {"error": "no_friends", "message": "friend_ids is empty."}
+
+        import asyncio as _asyncio
+
+        async def _one(friend_id: str):
+            try:
+                return await execute_tool(
+                    "message_friend",
+                    {"friend_id": friend_id, "intent": intent, "scope_required": scope_required},
+                    actor_user_id=actor_user_id,
+                    conversation_id=conversation_id,
+                    viewer_scope=viewer_scope,
+                    a2a_dispatch=a2a_dispatch,
+                    reply_sink=reply_sink,
+                )
+            except Exception as exc:
+                return {"error": "exception", "message": str(exc)}
+
+        results = await _asyncio.gather(*[_one(fid) for fid in friend_ids])
+        return {
+            "replies": [
+                {"friend_id": fid, "reply": r}
+                for fid, r in zip(friend_ids, results)
+            ]
         }
 
     if name == "reply_to_agent":

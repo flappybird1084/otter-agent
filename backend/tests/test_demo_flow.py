@@ -116,6 +116,51 @@ async def test_new_tools_smoke():
 
 
 @pytest.mark.asyncio
+async def test_message_friends_parallel_fanout():
+    """message_friends should dispatch to all friends and return all replies in one call."""
+    from agent.tools import execute_tool
+    from agent.loop import run_agent_turn  # to reuse a real a2a_dispatch
+    from db import inbox as inbox_db
+    from db.events import list_events
+
+    # Stand up an a2a_dispatch identical to the one inside run_agent_turn.
+    async def a2a_dispatch(inbox_id: str):
+        msg = inbox_db.get_inbox_message(inbox_id)
+        inbox_db.update_inbox_message(inbox_id, {"status": "processing"})
+        return await run_agent_turn(
+            user_id=msg["recipient_user_id"],
+            conversation_id=msg["conversation_id"],
+            input=msg["intent"],
+            mode="agent_inbox",
+            inbox_msg=msg,
+        )
+
+    res = await execute_tool(
+        "message_friends",
+        {
+            "friend_ids": ["user_priya", "user_devon"],
+            "intent": "Find a 2h window this week. Share your free times.",
+            "scope_required": "friend",
+        },
+        actor_user_id="user_maya",
+        conversation_id="conv_group",
+        a2a_dispatch=a2a_dispatch,
+    )
+    assert "replies" in res
+    fids = [r["friend_id"] for r in res["replies"]]
+    assert "user_priya" in fids and "user_devon" in fids
+    # Each reply has either a summary or an error
+    for r in res["replies"]:
+        rep = r["reply"]
+        assert ("summary" in rep) or ("error" in rep)
+
+    types = [e["type"] for e in list_events(limit=100)]
+    # Two sends, two receives
+    assert types.count("agent_message_sent") >= 2
+    assert types.count("agent_message_received") >= 2
+
+
+@pytest.mark.asyncio
 async def test_conversation_memory_across_turns():
     """Multi-turn within the same conversation should retain history."""
     from agent.loop import run_agent_turn
