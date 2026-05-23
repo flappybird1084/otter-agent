@@ -36,7 +36,14 @@ from db import friendships as friendships_db
 from db import calendar as calendar_db
 from db import notes as notes_db
 from db import inbox as inbox_db
-from db.chat import write_chat_message, list_chat_messages, list_chat_messages_for_conversation
+from db.chat import (
+    write_chat_message,
+    list_chat_messages,
+    list_chat_messages_for_conversation,
+    list_direct_chat_messages,
+    delete_direct_chat,
+    delete_self_chat,
+)
 from db.events import list_events
 from db.store import get_store, new_id
 
@@ -137,6 +144,58 @@ def get_user(user_id: str) -> dict:
     return u
 
 
+@app.get("/social/{viewer_user_id}")
+def get_social(viewer_user_id: str) -> dict:
+    """For the social graph: each friend + the notes from that friend the
+    viewer is allowed to read (after share_tier × reciprocal-scope filtering)."""
+    from agent.scope import can_see_note_share_tier
+
+    me = users_db.get_user(viewer_user_id)
+    if not me:
+        raise HTTPException(404, "user not found")
+
+    # Build per-friend visible notes. For each friend, the friend's scope of
+    # ME governs what I see of their notes. Public notes are visible to anyone.
+    rows = friendships_db.list_friends(viewer_user_id)
+    out_friends: list[dict] = []
+    for f in rows:
+        other = users_db.get_user(f["friend_id"]) or {}
+        # How the friend scopes me — governs what I can read from them
+        their_view_of_me = friendships_db.get_friendship(
+            owner_id=f["friend_id"], friend_id=viewer_user_id,
+        )
+        their_scope = (their_view_of_me or {}).get("scope")
+
+        friend_notes = notes_db.list_notes(f["friend_id"])
+        visible = []
+        for n in friend_notes:
+            tier = n.get("share_tier", "private")
+            if not can_see_note_share_tier(their_scope, tier):
+                continue
+            visible.append({
+                "id": n["id"],
+                "title": n.get("title"),
+                "slug": n.get("slug"),
+                "kind": n.get("kind", "note"),
+                "share_tier": tier,
+            })
+
+        out_friends.append({
+            "id": f["friend_id"],
+            "display_name": other.get("display_name"),
+            "handle": other.get("handle"),
+            "avatar_emoji": other.get("avatar_emoji"),
+            "my_scope_of_them": f.get("scope"),
+            "their_scope_of_me": their_scope,
+            "visible_notes": visible,
+        })
+
+    return {
+        "me": {"id": me["id"], "display_name": me.get("display_name")},
+        "friends": out_friends,
+    }
+
+
 @app.get("/friendships")
 def get_all_friendships() -> list[dict]:
     """All directed friendship docs (A→B), enriched with the friend's display info."""
@@ -188,12 +247,158 @@ def get_notes(user_id: str) -> list[dict]:
     return notes_db.list_notes(user_id)
 
 
+@app.get("/notes/{user_id}/search")
+def search_notes_endpoint(user_id: str, q: str = "") -> dict:
+    """Search this user's notes; returns the shape avitest1's SearchModal expects."""
+    rows = notes_db.search_notes(user_id, q, limit=30)
+    # search_notes already includes id, title, tags, snippet. Add slug.
+    results = []
+    for r in rows:
+        full = notes_db.get_note(r["id"]) or {}
+        results.append({
+            "id": r["id"],
+            "title": r.get("title"),
+            "slug": full.get("slug"),
+            "kind": full.get("kind"),
+            "snippet": r.get("snippet", ""),
+        })
+    return {"results": results}
+
+
+@app.get("/notes/{user_id}/graph")
+def notes_graph(user_id: str) -> dict:
+    """Build a brain-map graph by parsing [[Wiki-link]] refs in each note body."""
+    import re as _re
+
+    rows = notes_db.list_notes(user_id)
+    nodes = [{"id": n["id"], "title": n.get("title"), "kind": n.get("kind", "note")} for n in rows]
+    by_slug = {n.get("slug"): n["id"] for n in rows if n.get("slug")}
+    by_title_lc = {(n.get("title") or "").lower(): n["id"] for n in rows}
+
+    edges: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    wiki_re = _re.compile(r"\[\[([^\]]+)\]\]")
+    for n in rows:
+        body = notes_db.read_note_body(n["id"])
+        for m in wiki_re.finditer(body):
+            ref = m.group(1).strip()
+            target_id = by_title_lc.get(ref.lower()) or by_slug.get(notes_db.slugify(ref))
+            if not target_id or target_id == n["id"]:
+                continue
+            key = tuple(sorted([n["id"], target_id]))
+            if key in seen:
+                continue
+            seen.add(key)
+            edges.append({"a": key[0], "b": key[1]})
+    return {"nodes": nodes, "edges": edges}
+
+
+@app.get("/notes/{user_id}/by-slug/{slug}")
+def get_note_by_slug_endpoint(user_id: str, slug: str) -> dict:
+    n = notes_db.get_note_by_slug(user_id, slug)
+    if not n:
+        raise HTTPException(404, "note not found")
+    return {**n, "body": notes_db.read_note_body(n["id"])}
+
+
 @app.get("/notes/{user_id}/{note_id}")
 def get_note(user_id: str, note_id: str) -> dict:
     n = notes_db.get_note(note_id)
     if not n or n.get("user_id") != user_id:
         raise HTTPException(404, "note not found")
     return {**n, "body": notes_db.read_note_body(note_id)}
+
+
+class NoteCreate(BaseModel):
+    title: str | None = None
+    slug: str | None = None
+    body: str | None = None
+    kind: str | None = None
+    tags: list[str] | None = None
+    share_tier: str | None = None
+    status: str | None = None
+    due_at: str | None = None
+
+
+@app.post("/notes/{user_id}")
+def create_or_get_note_by_slug(user_id: str, req: NoteCreate) -> dict:
+    """Create a note; if `slug` is given and exists, return it (wiki-link autocreate)."""
+    if req.slug:
+        existing = notes_db.get_note_by_slug(user_id, req.slug)
+        if existing:
+            return {**existing, "body": notes_db.read_note_body(existing["id"])}
+
+    from db.store import get_store as _gs, new_id as _nid
+    title = req.title or (req.slug.replace("-", " ").title() if req.slug else "Untitled")
+    body = req.body if req.body is not None else f"# {title}\n\n"
+    slug = req.slug or notes_db.slugify(title)
+    if notes_db.get_note_by_slug(user_id, slug):
+        slug = f"{slug}-{_nid()[:6]}"
+    note_id = "note_" + _nid()
+    store = _gs()
+    storage_path = store.write_note(user_id, note_id, body)
+    doc = {
+        "id": note_id,
+        "user_id": user_id,
+        "title": title,
+        "slug": slug,
+        "kind": req.kind or "note",
+        "status": req.status,
+        "due_at": req.due_at,
+        "tags": req.tags or [],
+        "share_tier": req.share_tier or "private",
+        "sort_index": notes_db.next_sort_index(user_id),
+        "storage_path": storage_path,
+        "updated_at": __import__("datetime").datetime.utcnow().isoformat(),
+    }
+    store.upsert("notes", note_id, doc)
+    return {**doc, "body": body}
+
+
+class NoteUpdate(BaseModel):
+    title: str | None = None
+    body: str | None = None
+    kind: str | None = None
+    tags: list[str] | None = None
+    share_tier: str | None = None
+    status: str | None = None
+    due_at: str | None = None
+    sort_index: float | None = None
+
+
+@app.put("/notes/{user_id}/{note_id}")
+def update_note_endpoint(user_id: str, note_id: str, req: NoteUpdate) -> dict:
+    n = notes_db.get_note(note_id)
+    if not n or n.get("user_id") != user_id:
+        raise HTTPException(404, "note not found")
+    from db.store import get_store as _gs
+    store = _gs()
+    patch: dict = {}
+    if req.title is not None:
+        patch["title"] = req.title
+        new_slug = notes_db.slugify(req.title)
+        if new_slug != n.get("slug") and not notes_db.get_note_by_slug(user_id, new_slug):
+            patch["slug"] = new_slug
+    if req.body is not None:
+        store.write_note(user_id, note_id, req.body)
+    for k in ("kind", "tags", "share_tier", "status", "due_at", "sort_index"):
+        v = getattr(req, k)
+        if v is not None:
+            patch[k] = v
+    patch["updated_at"] = __import__("datetime").datetime.utcnow().isoformat()
+    store.update("notes", note_id, patch)
+    updated = store.get("notes", note_id) or {}
+    return {**updated, "body": store.read_note(user_id, note_id)}
+
+
+@app.delete("/notes/{user_id}/{note_id}")
+def delete_note_endpoint(user_id: str, note_id: str) -> dict:
+    n = notes_db.get_note(note_id)
+    if not n or n.get("user_id") != user_id:
+        raise HTTPException(404, "note not found")
+    from db.store import get_store as _gs
+    _gs().delete("notes", note_id)
+    return {"ok": True}
 
 
 @app.get("/calendar/{user_id}")
@@ -211,6 +416,84 @@ def get_chat(user_id: str, limit: int = 50, conversation_id: str | None = None) 
     if conversation_id:
         return list_chat_messages_for_conversation(user_id, conversation_id)
     return list_chat_messages(user_id, limit=limit)
+
+
+@app.delete("/chat/{user_id}")
+def delete_chat(user_id: str, conversation_id: str | None = None) -> dict:
+    n = delete_self_chat(user_id, conversation_id)
+    return {"ok": True, "deleted": n}
+
+
+# ---------------------------------------------------------------------------
+# Direct chat: user talks straight to a friend's agent (not via their own
+# agent). Scope governs what the friend's agent shares.
+# ---------------------------------------------------------------------------
+
+
+class DirectChatRequest(BaseModel):
+    sender_user_id: str
+    recipient_user_id: str
+    content: str
+    conversation_id: str | None = None
+
+
+@app.post("/direct-chat")
+async def direct_chat(req: DirectChatRequest) -> dict:
+    sender = users_db.get_user(req.sender_user_id)
+    recipient = users_db.get_user(req.recipient_user_id)
+    if not sender or not recipient:
+        raise HTTPException(404, "user not found")
+
+    # Reciprocal scope check — does the RECIPIENT actually have the sender as
+    # any kind of friend? If they're not friends at all, no chat is possible.
+    friendship = friendships_db.get_friendship(
+        owner_id=req.recipient_user_id, friend_id=req.sender_user_id,
+    )
+    if not friendship:
+        raise HTTPException(
+            403,
+            f"{recipient.get('display_name')} hasn't added you, so their agent won't talk to you.",
+        )
+
+    conv_id = req.conversation_id or new_id("dconv")
+    # Persist the sender's message under the (sender, target=recipient) thread.
+    write_chat_message(
+        req.sender_user_id, "user", req.content, conv_id,
+        target_user_id=req.recipient_user_id,
+    )
+    reply = await run_agent_turn(
+        user_id=req.recipient_user_id,
+        conversation_id=conv_id,
+        input=req.content,
+        mode="agent_direct",
+        sender_user_id=req.sender_user_id,
+    )
+    return {
+        "reply": reply if isinstance(reply, str) else str(reply),
+        "conversation_id": conv_id,
+        "scope": friendship.get("scope"),
+    }
+
+
+@app.get("/direct-chat/{sender_user_id}/{recipient_user_id}")
+def get_direct_chat(
+    sender_user_id: str,
+    recipient_user_id: str,
+    conversation_id: str | None = None,
+) -> list[dict]:
+    return list_direct_chat_messages(
+        sender_user_id, recipient_user_id, conversation_id,
+    )
+
+
+@app.delete("/direct-chat/{sender_user_id}/{recipient_user_id}")
+def delete_direct(
+    sender_user_id: str,
+    recipient_user_id: str,
+    conversation_id: str | None = None,
+) -> dict:
+    n = delete_direct_chat(sender_user_id, recipient_user_id, conversation_id)
+    return {"ok": True, "deleted": n}
 
 
 @app.get("/inbox/{user_id}")

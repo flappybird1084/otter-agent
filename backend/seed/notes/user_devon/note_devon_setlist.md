@@ -10,4 +10,4 @@ For Wednesday night at the coffeehouse.
 
 Encore if asked: "Map of the Yard" — solo, no mic.
 
-~25 min total.
+~25 min total. Plan ties into [[Recording session plan]] — same three tracks.

@@ -73,7 +73,7 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                 },
                 "share_tier": {
                     "type": "string",
-                    "enum": ["private", "friends", "close_friends", "family"],
+                    "enum": ["private", "public", "friends", "close_friends", "family"],
                 },
                 "limit": {"type": "integer", "description": "Max results. Default 20."},
             },
@@ -220,8 +220,9 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
         "description": (
             "Create a new note for the current user. Use when asked to save, jot down, "
             "draft, write, or record something as a note. Choose share_tier deliberately: "
-            "'private' for self-only; 'friends'/'close_friends'/'family' to let those "
-            "tiers' friends read it. If you're in inbox mode (acting on a friend's "
+            "'private' for self-only; 'public' for visible-to-anyone (incl. strangers "
+            "and on the user's social-graph node); 'friends'/'close_friends'/'family' "
+            "for those tiers and above. If you're in inbox mode (acting on a friend's "
             "request) and you omit share_tier, the system picks one keyed to the "
             "requester's scope so they can see what you just made for them."
         ),
@@ -233,7 +234,20 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "share_tier": {
                     "type": "string",
-                    "enum": ["private", "friends", "close_friends", "family"],
+                    "enum": ["private", "public", "friends", "close_friends", "family"],
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["note", "daily", "project", "task", "person"],
+                    "description": "Category. 'task' for todos, 'daily' for journals, 'project' for ongoing work, 'person' for who-is-X notes, 'note' for everything else (default).",
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Optional status label (e.g. 'todo', 'doing', 'done'). Free-form.",
+                },
+                "due_at": {
+                    "type": "string",
+                    "description": "Optional ISO timestamp for when this is due.",
                 },
             },
             "required": ["title", "body"],
@@ -242,8 +256,9 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
     "update_note": {
         "name": "update_note",
         "description": (
-            "Update an existing note's body, title, tags, or share_tier. Use "
-            "search_notes first to find the note id. Only fields you pass change."
+            "Update an existing note's body, title, tags, share_tier, kind, status, "
+            "or due_at. Use search_notes first to find the note id. Only fields you "
+            "pass change."
         ),
         "parameters": {
             "type": "object",
@@ -254,8 +269,14 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                 "tags": {"type": "array", "items": {"type": "string"}},
                 "share_tier": {
                     "type": "string",
-                    "enum": ["private", "friends", "close_friends", "family"],
+                    "enum": ["private", "public", "friends", "close_friends", "family"],
                 },
+                "kind": {
+                    "type": "string",
+                    "enum": ["note", "daily", "project", "task", "person"],
+                },
+                "status": {"type": "string"},
+                "due_at": {"type": "string"},
             },
             "required": ["note_id"],
         },
@@ -302,6 +323,10 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
                 "start_iso": {"type": "string"},
                 "end_iso": {"type": "string"},
                 "location": {"type": "string"},
+                "notes": {
+                    "type": "string",
+                    "description": "Optional freeform description shown on the event popup.",
+                },
                 "visibility": {
                     "type": "string",
                     "enum": ["title_and_time", "busy_only", "full"],
@@ -407,6 +432,18 @@ INBOX_TOOLS = [
     #   message_friend / message_friends — prevents cascading agent loops
     #   set_friend_scope — relationship trust shouldn't be set by a remote agent
     #   propose_event — would write to the requesting agent's calendar; out of scope
+]
+
+# Direct-chat mode: a friend chats with this user's agent through their UI.
+# Same as inbox tools, but the reply is free text (no reply_to_agent).
+DIRECT_TOOLS = [
+    "get_current_time",
+    "search_notes", "list_notes_filtered", "read_note",
+    "create_note", "update_note", "delete_note",
+    "read_calendar", "create_calendar_event", "delete_calendar_event",
+    "list_friends",
+    # Deliberately omitted: same reasons as INBOX_TOOLS + no reply_to_agent
+    # since the recipient produces a normal chat reply, not a structured reply.
 ]
 
 
@@ -766,6 +803,7 @@ async def execute_tool(
         }
 
     if name == "create_note":
+        from db.notes import slugify, VALID_KINDS, get_note_by_slug
         store = get_store()
         note_id = "note_" + new_id()
         body = args.get("body", "")
@@ -773,18 +811,28 @@ async def execute_tool(
         tags = args.get("tags", [])
         share_tier = args.get("share_tier")
         if not share_tier:
-            # In inbox mode, default the new note's share_tier so the requesting
-            # friend can actually read what was made for them. Private would
-            # mean nobody, which defeats the point of "create this on my behalf".
             if viewer_scope:
                 share_tier = _default_share_tier_for_scope(viewer_scope)
             else:
                 share_tier = "private"
+        kind = args.get("kind") or "note"
+        if kind not in VALID_KINDS:
+            kind = "note"
+        status = args.get("status")
+        due_at = args.get("due_at")
+        slug = slugify(title)
+        # Dedupe slug per user
+        if get_note_by_slug(actor_user_id, slug):
+            slug = f"{slug}-{new_id()[:6]}"
         storage_path = store.write_note(actor_user_id, note_id, body)
         store.upsert("notes", note_id, {
             "id": note_id,
             "user_id": actor_user_id,
             "title": title,
+            "slug": slug,
+            "kind": kind,
+            "status": status,
+            "due_at": due_at,
             "tags": tags,
             "share_tier": share_tier,
             "storage_path": storage_path,
@@ -799,15 +847,24 @@ async def execute_tool(
         return {"ok": True, "note_id": note_id, "title": title}
 
     if name == "update_note":
+        from db.notes import VALID_KINDS, slugify, get_note_by_slug
         store = get_store()
         note_id = args.get("note_id", "")
         existing = store.get("notes", note_id)
         if not existing or existing.get("user_id") != actor_user_id:
             return {"error": "not_found", "message": "Note not found or not yours."}
         patch = {"updated_at": utcnow_iso()}
-        for k in ("title", "tags", "share_tier"):
+        for k in ("title", "tags", "share_tier", "status", "due_at"):
             if k in args and args[k] is not None:
                 patch[k] = args[k]
+        if args.get("kind") in VALID_KINDS:
+            patch["kind"] = args["kind"]
+        # If title changes and the slug doesn't exist or matches the OLD title,
+        # regenerate slug. Don't overwrite custom slugs.
+        if "title" in patch:
+            new_slug = slugify(patch["title"])
+            if new_slug != existing.get("slug") and not get_note_by_slug(actor_user_id, new_slug):
+                patch["slug"] = new_slug
         if "body" in args and args["body"] is not None:
             store.write_note(actor_user_id, note_id, args["body"])
         store.update("notes", note_id, patch)
@@ -878,6 +935,7 @@ async def execute_tool(
             "start": args["start_iso"],
             "end": args["end_iso"],
             "location": args.get("location"),
+            "notes": args.get("notes"),
             "visibility": args.get("visibility", "full"),
             "status": "confirmed",
         })
@@ -1032,6 +1090,8 @@ def _default_share_tier_for_scope(scope: str) -> str:
         return "family"
     if scope == "close_friend":
         return "close_friends"
-    # acquaintance can't see ANY notes; default to 'friends' so the note isn't
-    # private (closer raises later won't have to migrate).
-    return "friends"
+    if scope == "friend":
+        return "friends"
+    # acquaintance can't see scope-tiered notes, so default to public so the
+    # requester at least sees the note they asked for.
+    return "public"

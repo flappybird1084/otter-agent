@@ -23,6 +23,7 @@ Covers chapters 1-5. Below: the version of my notes I'd actually share.
 - Identify the subproblem dimension carefully — wrong dimension = exponential blowup
 - Memoize OR bottom-up table; bottom-up wins when you need all subproblems
 - Classic examples: LIS, edit distance, knapsack
+- See [[Dynamic programming — worked examples]] for the full recurrences
 
 ## Greedy
 
