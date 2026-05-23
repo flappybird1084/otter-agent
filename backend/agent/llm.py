@@ -84,7 +84,7 @@ class VertexLLM(LLM):
             system_instruction=system,
             generation_config=self._GenerationConfig(
                 temperature=0.3,
-                max_output_tokens=4096,
+                max_output_tokens=8192,
             ),
         )
 
