@@ -72,14 +72,26 @@ async def run_agent_turn(
     else:
         assert inbox_msg is not None
         sender = users_db.get_user(inbox_msg["sender_user_id"]) or {"display_name": "unknown", "handle": ""}
+        # The receiver's agent should reason at the actual trust level it has
+        # granted the sender — NOT the (possibly lower) scope_required that the
+        # caller picked for the request. scope_required is just the validation
+        # floor; filtering should use the real friendship scope so the agent
+        # can see (and decide what to share from) everything the friendship
+        # actually permits.
+        friendship = friendships_db.get_friendship(
+            owner_id=user_id, friend_id=inbox_msg["sender_user_id"],
+        )
+        actual_scope = (friendship or {}).get(
+            "scope", inbox_msg.get("scope_required", "acquaintance"),
+        )
         system = system_prompt_agent_inbox(
             receiver=user,
             sender=sender,
-            scope=inbox_msg.get("scope_required", "acquaintance"),
+            scope=actual_scope,
             intent=inbox_msg["intent"],
         )
         tool_names = INBOX_TOOLS
-        viewer_scope = inbox_msg.get("scope_required", "acquaintance")
+        viewer_scope = actual_scope
         reply_sink = {"summary": None, "data": None}
 
     log_event(
