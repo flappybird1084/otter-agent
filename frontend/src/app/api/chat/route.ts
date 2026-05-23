@@ -30,6 +30,9 @@ type StreamEvent =
       payloadSent: unknown;
       payloadDelivered: unknown;
       reply?: unknown;
+      rejected?: boolean;
+      reason?: string;
+      summary?: string;
     }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -43,7 +46,8 @@ function asTuple(e: BackendAgentEvent): StreamEvent | null {
         name: String(p["tool_name"] ?? "tool"),
         input: (p["tool_args"] as unknown) ?? null,
       };
-    case "agent_message_sent":
+    case "agent_message_sent": {
+      const rejected = Boolean(p["rejected"]);
       return {
         type: "agent_message",
         fromUserId: e.actor_user_id,
@@ -51,8 +55,17 @@ function asTuple(e: BackendAgentEvent): StreamEvent | null {
         intent: "message",
         payloadSent: { summary: p["summary"] ?? "" },
         payloadDelivered: { summary: p["summary"] ?? "" },
-        reply: undefined,
+        // Rejected sends never get a reply event from the recipient, so we
+        // close the loop here by populating `reply` immediately with the
+        // denial details. UI uses `rejected` to style differently.
+        reply: rejected
+          ? { text: String(p["summary"] ?? "blocked"), rejected: true }
+          : undefined,
+        rejected: rejected || undefined,
+        reason: rejected ? String(p["reason"] ?? "") : undefined,
+        summary: String(p["summary"] ?? ""),
       };
+    }
     case "agent_message_received":
       return {
         type: "agent_message",

@@ -10,11 +10,30 @@ Both implementations return a normalized object:
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import os
 import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable
+
+
+def _sanitize_for_proto(v: Any) -> Any:
+    """Coerce values into proto-Struct-friendly Python types.
+
+    Firestore reads return DatetimeWithNanoseconds, Timestamp, etc., which the
+    proto marshaller can't put into a function_response Struct. Convert
+    datetimes to ISO strings and recurse into dicts/lists/tuples.
+    """
+    if isinstance(v, _dt.datetime):
+        return v.isoformat()
+    if isinstance(v, _dt.date):
+        return v.isoformat()
+    if isinstance(v, dict):
+        return {k: _sanitize_for_proto(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_sanitize_for_proto(x) for x in v]
+    return v
 
 
 @dataclass
@@ -106,7 +125,8 @@ class VertexLLM(LLM):
                 parts = []
                 for res in t.tool_results:
                     parts.append(Part.from_function_response(
-                        name=res["name"], response={"content": res["response"]}
+                        name=res["name"],
+                        response={"content": _sanitize_for_proto(res["response"])},
                     ))
                 if parts:
                     contents.append(Content(role="user", parts=parts))

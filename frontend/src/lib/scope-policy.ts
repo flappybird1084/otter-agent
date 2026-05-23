@@ -24,12 +24,13 @@
 export type Scope = "acquaintance" | "friend" | "family" | "close";
 
 export type Intent =
-  | "share_availability" // "are you free Thursday?"
-  | "share_location"     // "where will you be?"
-  | "share_note"         // "send me your notes on X"
-  | "share_task"         // "what's on your plate?"
-  | "share_contact"      // phone/email/etc.
-  | "share_event";       // calendar event details
+  | "share_public_profile" // bio + public-tier notes (visible to anyone)
+  | "share_availability"   // "are you free Thursday?"
+  | "share_location"       // "where will you be?"
+  | "share_note"           // "send me your notes on X"
+  | "share_task"           // "what's on your plate?"
+  | "share_contact"        // phone/email/etc.
+  | "share_event";         // calendar event details
 
 // Loose payload shape — fields are filtered out as scope demands.
 export interface SharePayload {
@@ -94,6 +95,14 @@ export function applyScope(
   const out: SharePayload = {};
 
   switch (intent) {
+    case "share_public_profile": {
+      // Public bio + any note the owner marked share_tier=public. Visible to
+      // ANY scope (even acquaintance) and in fact to non-friends too. This is
+      // the floor — what the owner has explicitly chosen to make public.
+      out.text = "public bio + public notes";
+      return out;
+    }
+
     case "share_availability": {
       // Close+/Family: real start/end. Friend: day-level. Acquaintance: nothing.
       if (atLeast(scope, "close")) {

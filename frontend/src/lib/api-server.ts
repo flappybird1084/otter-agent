@@ -279,6 +279,14 @@ export function toUiFriend(
   };
 }
 
+type UiShareTier = "private" | "public" | "friends" | "close_friends" | "family";
+const VALID_TIERS: ReadonlyArray<UiShareTier> = [
+  "private", "public", "friends", "close_friends", "family",
+];
+function toUiShareTier(s: string | undefined): UiShareTier {
+  return VALID_TIERS.includes(s as UiShareTier) ? (s as UiShareTier) : "private";
+}
+
 export function toUiNoteSummary(n: BackendNote) {
   return {
     id: n.id,
@@ -289,6 +297,7 @@ export function toUiNoteSummary(n: BackendNote) {
     dueAt: n.due_at ?? null,
     updatedAt: n.updated_at ?? new Date().toISOString(),
     sortIndex: n.sort_index,
+    shareTier: toUiShareTier(n.share_tier),
   };
 }
 
@@ -301,6 +310,7 @@ export function toUiActiveNote(n: BackendNote & { body: string }) {
     kind: n.kind ?? "note",
     status: n.status ?? null,
     dueAt: n.due_at ?? null,
+    shareTier: toUiShareTier(n.share_tier),
   };
 }
 

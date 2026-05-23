@@ -423,7 +423,7 @@ input, textarea { font-family: inherit; color: inherit; }
   border-radius: 999px;
   min-height: 36px;
 }
-.a2a-strip.done { background: linear-gradient(90deg, var(--bg-sunken), oklch(0.32 0.06 150 / .12)); border-color: oklch(0.55 0.12 150 / .35); }
+.a2a-strip.done { background: linear-gradient(90deg, var(--bg-sunken), oklch(0.32 0.06 150 / .12)); border-color: oklch(0.55 0.12 150 / .35); border-radius: 20px; }
 .a2a-avatar {
   width: 28px; height: 28px; border-radius: 50%;
   background: var(--bg-elev); border: 1.5px solid var(--accent-line);

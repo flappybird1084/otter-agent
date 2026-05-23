@@ -24,16 +24,17 @@ const SCOPES: { id: Scope; label: string; blurb: string; hue: number }[] = [
   { id: "family",       label: "Family",       blurb: "Most-trusted tier — everything Close gets, plus contact info (email, phone).", hue: 60 },
   { id: "close",        label: "Close",        blurb: "Full availability + locations, note titles + bodies, tasks. Almost everything.", hue: 145 },
   { id: "friend",       label: "Friend",       blurb: "Day-level free/busy + event names only. No location, no notes, no tasks.", hue: 220 },
-  { id: "acquaintance", label: "Acquaintance", blurb: "Public-facing facts only; nothing scheduling or note-related.", hue: 280 },
+  { id: "acquaintance", label: "Acquaintance", blurb: "Bio + any notes marked public. Free/busy hints at most. No event titles, no locations, no scoped notes, no tasks.", hue: 280 },
 ];
 
 const INTENT_LABELS: { intent: Intent; label: string }[] = [
-  { intent: "share_availability", label: "Ask if you're free at a specific time" },
-  { intent: "share_event",        label: "See details of your calendar events" },
-  { intent: "share_location",     label: "Know where you'll be" },
-  { intent: "share_note",         label: "Read your note titles and bodies" },
-  { intent: "share_task",         label: "See what tasks are on your plate" },
-  { intent: "share_contact",      label: "Get your email/phone" },
+  { intent: "share_public_profile", label: "Read your bio + public notes" },
+  { intent: "share_availability",   label: "Ask if you're free at a specific time" },
+  { intent: "share_event",          label: "See details of your calendar events" },
+  { intent: "share_location",       label: "Know where you'll be" },
+  { intent: "share_note",           label: "Read your note titles and bodies" },
+  { intent: "share_task",           label: "See what tasks are on your plate" },
+  { intent: "share_contact",        label: "Get your email/phone" },
 ];
 
 const SAMPLE: SharePayload = {

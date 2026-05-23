@@ -23,6 +23,22 @@ const SCOPE_LABEL: Record<string, string> = {
   family: "family",
 };
 
+const TIER_HUE: Record<string, number | null> = {
+  // null = no dot (private — the implicit default; saves visual noise)
+  private: null,
+  public: 200,
+  friends: 220,
+  close_friends: 145,
+  family: 60,
+};
+const TIER_LABEL: Record<string, string> = {
+  private: "Private — only you",
+  public: "Public — anyone, even strangers",
+  friends: "Friends tier",
+  close_friends: "Close friends + family",
+  family: "Family only",
+};
+
 function effectiveScope(_mine: string, theirs: string): string {
   // The effective scope for what YOU see about this friend is whatever THEY
   // have you set as — their scope of you gates what their agent shares back.
@@ -212,6 +228,20 @@ function TreeGroup({
                 >
                   <span className="icon"><NoteIcon kind={n.kind} /></span>
                   <span className="title-text">{n.title}</span>
+                  {(() => {
+                    const hue = TIER_HUE[n.shareTier];
+                    if (hue == null) return null;
+                    return (
+                      <span
+                        title={TIER_LABEL[n.shareTier] ?? n.shareTier}
+                        style={{
+                          marginLeft: 4, width: 7, height: 7, borderRadius: "50%",
+                          background: `oklch(0.72 0.16 ${hue})`,
+                          flexShrink: 0,
+                        }}
+                      />
+                    );
+                  })()}
                   {onDelete && (
                     <button
                       type="button"
