@@ -8,8 +8,32 @@
  * /events?limit=... and replay the matching conversation_id as SSE
  * so the inline tool chips and a2a strips still light up.
  */
+import { cookies } from "next/headers";
 import { requireUser } from "@/lib/auth";
 import { api, type BackendAgentEvent } from "@/lib/api-server";
+
+function convCookieName(userId: string, target: string): string {
+  // Per (me, chat-target) so chats with different friends don't bleed history.
+  return `confluent_conv_${userId}_${target}`;
+}
+
+export async function DELETE(req: Request) {
+  let user;
+  try {
+    user = await requireUser();
+  } catch {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  const target = new URL(req.url).searchParams.get("target") || "self";
+  const c = await cookies();
+  c.delete(convCookieName(user.id, target));
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: { "content-type": "application/json" },
+  });
+}
 
 type StreamEvent =
   | { type: "text"; delta: string }
@@ -91,49 +115,74 @@ export async function POST(req: Request) {
     ? `Please message ${body.friendId}'s agent (via message_friend) with: "${message}"`
     : message;
 
+  // Conversation continuity: client doesn't track conv id, so we keep one
+  // cookie per (user, chat-target). First turn -> backend mints one, we
+  // store it. Subsequent turns reuse it so the agent has history.
+  const cookieJar = await cookies();
+  const target = body.friendId || "self";
+  const convCookie = convCookieName(user.id, target);
+  const priorConvId =
+    body.conversationId || cookieJar.get(convCookie)?.value || null;
+
+  // Do the backend call BEFORE building the Response so we can include
+  // Set-Cookie in the response headers. (Cookies written via cookies().set
+  // after streaming begins are silently dropped in Next.js.)
+  let collected: StreamEvent[] = [];
+  let convId: string | null = priorConvId;
+  try {
+    const r = await api.postChat(user.id, userInput, priorConvId);
+    convId = r.conversation_id;
+    try {
+      const events = await api.getEvents(80);
+      const inOrder = events
+        .filter((e) => e.conversation_id === r.conversation_id)
+        .sort((a, b) =>
+          (a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1,
+        );
+      for (const e of inOrder) {
+        const out = asTuple(e);
+        if (out) collected.push(out);
+      }
+    } catch {
+      // not fatal — text still flows
+    }
+    collected.push({
+      type: "text",
+      delta: typeof r.reply === "string" ? r.reply : String(r.reply),
+    });
+    collected.push({ type: "done" });
+  } catch (err) {
+    collected.push({
+      type: "error",
+      message: err instanceof Error ? err.message : String(err),
+    });
+    collected.push({ type: "done" });
+  }
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (c: StreamEvent) => {
+    start(controller) {
+      for (const c of collected) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(c)}\n\n`));
-      };
-      try {
-        const r = await api.postChat(user.id, userInput, body.conversationId);
-        // Replay tool/a2a events from this conversation in order
-        try {
-          const events = await api.getEvents(80);
-          const inOrder = events
-            .filter((e) => e.conversation_id === r.conversation_id)
-            .sort((a, b) =>
-              (a.created_at ?? "") < (b.created_at ?? "") ? -1 : 1,
-            );
-          for (const e of inOrder) {
-            const out = asTuple(e);
-            if (out) send(out);
-          }
-        } catch {
-          // not fatal — the text reply still goes through
-        }
-        // The final text
-        send({ type: "text", delta: typeof r.reply === "string" ? r.reply : String(r.reply) });
-        send({ type: "done" });
-      } catch (err) {
-        send({
-          type: "error",
-          message: err instanceof Error ? err.message : String(err),
-        });
-        send({ type: "done" });
-      } finally {
-        controller.close();
       }
+      controller.close();
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "content-type": "text/event-stream; charset=utf-8",
-      "cache-control": "no-cache, no-transform",
-      connection: "keep-alive",
-    },
+  const headers = new Headers({
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
   });
+  if (convId) {
+    // 7-day persistence. Non-HttpOnly because the cookie is per-tab convenience,
+    // not a security boundary (the user picker isn't authenticated either).
+    const oneWeek = 60 * 60 * 24 * 7;
+    headers.append(
+      "set-cookie",
+      `${convCookie}=${encodeURIComponent(convId)}; Path=/; Max-Age=${oneWeek}; SameSite=Lax`,
+    );
+  }
+
+  return new Response(stream, { headers });
 }
