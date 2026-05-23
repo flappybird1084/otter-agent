@@ -131,11 +131,132 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
             "required": ["summary"],
         },
     },
+    "get_current_time": {
+        "name": "get_current_time",
+        "description": (
+            "Return the current date and time. Use for questions like 'what time is it', "
+            "'what day is today', or when you need 'now' to build a timestamp."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    "create_note": {
+        "name": "create_note",
+        "description": (
+            "Create a new note for the current user. Use when asked to save, jot down, "
+            "draft, write, or record something as a note. Choose share_tier carefully — "
+            "'private' is the safe default."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "body": {"type": "string", "description": "Markdown body."},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "share_tier": {
+                    "type": "string",
+                    "enum": ["private", "friends", "close_friends", "family"],
+                },
+            },
+            "required": ["title", "body"],
+        },
+    },
+    "update_note": {
+        "name": "update_note",
+        "description": (
+            "Update an existing note's body, title, tags, or share_tier. Use "
+            "search_notes first to find the note id. Only fields you pass change."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "note_id": {"type": "string"},
+                "title": {"type": "string"},
+                "body": {"type": "string"},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "share_tier": {
+                    "type": "string",
+                    "enum": ["private", "friends", "close_friends", "family"],
+                },
+            },
+            "required": ["note_id"],
+        },
+    },
+    "delete_note": {
+        "name": "delete_note",
+        "description": "Delete a note by id. Use after search_notes to find the note. Prefer to confirm with the user first.",
+        "parameters": {
+            "type": "object",
+            "properties": {"note_id": {"type": "string"}},
+            "required": ["note_id"],
+        },
+    },
+    "set_friend_scope": {
+        "name": "set_friend_scope",
+        "description": (
+            "Change the trust scope you have assigned to a friend. Higher scope means their "
+            "agent can see more of your data when they ask. Use list_friends first to confirm "
+            "the friend id. Scopes ranked low→high: acquaintance, friend, close_friend, family."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "friend_id": {"type": "string"},
+                "scope": {
+                    "type": "string",
+                    "enum": ["acquaintance", "friend", "close_friend", "family"],
+                },
+            },
+            "required": ["friend_id", "scope"],
+        },
+    },
+    "create_calendar_event": {
+        "name": "create_calendar_event",
+        "description": (
+            "Create a confirmed event on the user's own calendar. Use when asked to add, "
+            "schedule, or block time. For meetings negotiated with a friend, use propose_event "
+            "instead so the other side gets a confirmable card."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "start_iso": {"type": "string"},
+                "end_iso": {"type": "string"},
+                "location": {"type": "string"},
+                "visibility": {
+                    "type": "string",
+                    "enum": ["title_and_time", "busy_only", "full"],
+                },
+            },
+            "required": ["title", "start_iso", "end_iso"],
+        },
+    },
+    "delete_calendar_event": {
+        "name": "delete_calendar_event",
+        "description": "Delete a calendar event by id. Use after read_calendar to find the event.",
+        "parameters": {
+            "type": "object",
+            "properties": {"event_id": {"type": "string"}},
+            "required": ["event_id"],
+        },
+    },
 }
 
 
-SELF_TOOLS = ["search_notes", "read_note", "read_calendar", "list_friends", "message_friend", "propose_event"]
-INBOX_TOOLS = ["search_notes", "read_note", "read_calendar", "list_friends", "reply_to_agent"]
+SELF_TOOLS = [
+    "get_current_time",
+    "search_notes", "read_note", "create_note", "update_note", "delete_note",
+    "read_calendar", "create_calendar_event", "delete_calendar_event",
+    "list_friends", "set_friend_scope",
+    "message_friend", "propose_event",
+]
+INBOX_TOOLS = [
+    "get_current_time",
+    "search_notes", "read_note",
+    "read_calendar",
+    "list_friends",
+    "reply_to_agent",
+]
 
 
 # Lazy Vertex declarations
@@ -350,6 +471,158 @@ async def execute_tool(
             return {"error": "not_in_inbox_mode"}
         reply_sink["summary"] = args.get("summary", "")
         reply_sink["data"] = args.get("data", {})
+        return {"ok": True}
+
+    if name == "get_current_time":
+        now_utc = datetime.now(timezone.utc)
+        now_local = datetime.now()
+        return {
+            "iso_utc": now_utc.isoformat(),
+            "iso_local": now_local.isoformat(),
+            "human": now_local.strftime("%A, %B %d, %Y at %I:%M %p"),
+            "weekday": now_local.strftime("%A"),
+            "date": now_local.strftime("%Y-%m-%d"),
+            "time": now_local.strftime("%H:%M"),
+        }
+
+    if name == "create_note":
+        store = get_store()
+        note_id = "note_" + new_id()
+        body = args.get("body", "")
+        title = args["title"]
+        tags = args.get("tags", [])
+        share_tier = args.get("share_tier", "private")
+        storage_path = store.write_note(actor_user_id, note_id, body)
+        store.upsert("notes", note_id, {
+            "id": note_id,
+            "user_id": actor_user_id,
+            "title": title,
+            "tags": tags,
+            "share_tier": share_tier,
+            "storage_path": storage_path,
+            "updated_at": utcnow_iso(),
+        })
+        log_event(
+            type="note_changed",
+            actor_user_id=actor_user_id,
+            conversation_id=conversation_id,
+            payload={"summary": f"Created note: {title}", "action": "create", "note_id": note_id, "title": title},
+        )
+        return {"ok": True, "note_id": note_id, "title": title}
+
+    if name == "update_note":
+        store = get_store()
+        note_id = args.get("note_id", "")
+        existing = store.get("notes", note_id)
+        if not existing or existing.get("user_id") != actor_user_id:
+            return {"error": "not_found", "message": "Note not found or not yours."}
+        patch = {"updated_at": utcnow_iso()}
+        for k in ("title", "tags", "share_tier"):
+            if k in args and args[k] is not None:
+                patch[k] = args[k]
+        if "body" in args and args["body"] is not None:
+            store.write_note(actor_user_id, note_id, args["body"])
+        store.update("notes", note_id, patch)
+        log_event(
+            type="note_changed",
+            actor_user_id=actor_user_id,
+            conversation_id=conversation_id,
+            payload={
+                "summary": f"Updated note: {patch.get('title') or existing.get('title')}",
+                "action": "update",
+                "note_id": note_id,
+            },
+        )
+        return {"ok": True, "note_id": note_id}
+
+    if name == "delete_note":
+        store = get_store()
+        note_id = args.get("note_id", "")
+        existing = store.get("notes", note_id)
+        if not existing or existing.get("user_id") != actor_user_id:
+            return {"error": "not_found", "message": "Note not found or not yours."}
+        store.delete("notes", note_id)
+        # best-effort filesystem cleanup for local store
+        try:
+            from pathlib import Path
+            p = Path(os.environ.get("LOCAL_NOTES_PATH", "./seed/notes")) / actor_user_id / f"{note_id}.md"
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
+        log_event(
+            type="note_changed",
+            actor_user_id=actor_user_id,
+            conversation_id=conversation_id,
+            payload={
+                "summary": f"Deleted note: {existing.get('title')}",
+                "action": "delete",
+                "note_id": note_id,
+            },
+        )
+        return {"ok": True}
+
+    if name == "set_friend_scope":
+        from db import friendships as friendships_db_local
+        friend_id = args.get("friend_id", "")
+        scope = args.get("scope", "")
+        if scope not in ("acquaintance", "friend", "close_friend", "family"):
+            return {"error": "invalid_scope"}
+        if not friendships_db_local.get_friendship(actor_user_id, friend_id):
+            return {"error": "not_friends", "message": f"No friendship with {friend_id}."}
+        friendships_db_local.set_scope(actor_user_id, friend_id, scope)
+        log_event(
+            type="scope_changed",
+            actor_user_id=actor_user_id,
+            target_user_id=friend_id,
+            conversation_id=conversation_id,
+            payload={"summary": f"Set scope with {friend_id} → {scope}", "scope": scope},
+        )
+        return {"ok": True, "friend_id": friend_id, "scope": scope}
+
+    if name == "create_calendar_event":
+        store = get_store()
+        event_id = new_id()
+        store.add("calendar_events", {
+            "id": event_id,
+            "user_id": actor_user_id,
+            "title": args["title"],
+            "start": args["start_iso"],
+            "end": args["end_iso"],
+            "location": args.get("location"),
+            "visibility": args.get("visibility", "full"),
+            "status": "confirmed",
+        })
+        log_event(
+            type="calendar_changed",
+            actor_user_id=actor_user_id,
+            conversation_id=conversation_id,
+            payload={
+                "summary": f"Created event: {args['title']} @ {args['start_iso'][:16]}",
+                "action": "create",
+                "event_id": event_id,
+                "title": args["title"],
+            },
+        )
+        return {"ok": True, "event_id": event_id}
+
+    if name == "delete_calendar_event":
+        store = get_store()
+        event_id = args.get("event_id", "")
+        existing = store.get("calendar_events", event_id)
+        if not existing or existing.get("user_id") != actor_user_id:
+            return {"error": "not_found", "message": "Event not found or not yours."}
+        store.delete("calendar_events", event_id)
+        log_event(
+            type="calendar_changed",
+            actor_user_id=actor_user_id,
+            conversation_id=conversation_id,
+            payload={
+                "summary": f"Deleted event: {existing.get('title')}",
+                "action": "delete",
+                "event_id": event_id,
+            },
+        )
         return {"ok": True}
 
     return {"error": "unknown_tool", "message": name}
