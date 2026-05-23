@@ -326,6 +326,7 @@ def create_or_get_note_by_slug(user_id: str, req: NoteCreate) -> dict:
         "due_at": req.due_at,
         "tags": req.tags or [],
         "share_tier": req.share_tier or "private",
+        "sort_index": notes_db.next_sort_index(user_id),
         "storage_path": storage_path,
         "updated_at": __import__("datetime").datetime.utcnow().isoformat(),
     }
@@ -341,6 +342,7 @@ class NoteUpdate(BaseModel):
     share_tier: str | None = None
     status: str | None = None
     due_at: str | None = None
+    sort_index: float | None = None
 
 
 @app.put("/notes/{user_id}/{note_id}")
@@ -358,7 +360,7 @@ def update_note_endpoint(user_id: str, note_id: str, req: NoteUpdate) -> dict:
             patch["slug"] = new_slug
     if req.body is not None:
         store.write_note(user_id, note_id, req.body)
-    for k in ("kind", "tags", "share_tier", "status", "due_at"):
+    for k in ("kind", "tags", "share_tier", "status", "due_at", "sort_index"):
         v = getattr(req, k)
         if v is not None:
             patch[k] = v

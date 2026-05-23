@@ -28,11 +28,43 @@ def get_note_by_slug(user_id: str, slug: str) -> dict | None:
 
 
 def list_notes(user_id: str) -> list[dict]:
-    return get_store().query(
+    rows = get_store().query(
         "notes",
         where=[("user_id", "==", user_id)],
-        order_by=("updated_at", "desc"),
     )
+    # Sort by sort_index ascending if set; otherwise fall back to updated_at desc.
+    def key(r):
+        si = r.get("sort_index")
+        has_si = isinstance(si, (int, float))
+        # primary: 0 for has-sort_index, 1 for fallback (so explicit comes first)
+        # secondary: sort_index or 0; tertiary: -updated_at for desc fallback
+        return (
+            0 if has_si else 1,
+            si if has_si else 0,
+            -_iso_to_epoch(r.get("updated_at")),
+        )
+    return sorted(rows, key=key)
+
+
+def _iso_to_epoch(s: str | None) -> float:
+    if not s:
+        return 0.0
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return 0.0
+
+
+def next_sort_index(user_id: str) -> float:
+    """Returns a sort_index that places a new/moved note at the end."""
+    rows = list_notes(user_id)
+    mx = 0.0
+    for r in rows:
+        si = r.get("sort_index")
+        if isinstance(si, (int, float)) and si > mx:
+            mx = si
+    return mx + 1.0
 
 
 def get_note(note_id: str) -> dict | None:

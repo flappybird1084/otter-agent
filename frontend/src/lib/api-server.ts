@@ -205,6 +205,7 @@ export interface BackendNote {
   due_at?: string | null;
   tags?: string[];
   share_tier?: string;
+  sort_index?: number;
   updated_at?: string;
 }
 
@@ -287,6 +288,7 @@ export function toUiNoteSummary(n: BackendNote) {
     status: n.status ?? null,
     dueAt: n.due_at ?? null,
     updatedAt: n.updated_at ?? new Date().toISOString(),
+    sortIndex: n.sort_index,
   };
 }
 

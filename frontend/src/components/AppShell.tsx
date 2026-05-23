@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Sidebar from "./Sidebar";
 import NoteEditor from "./NoteEditor";
 import ChatPanel from "./ChatPanel";
@@ -7,6 +7,13 @@ import SocialView from "./SocialView";
 import CalendarView from "./CalendarView";
 import GraphView from "./GraphView";
 import SearchModal from "./SearchModal";
+
+const LEFT_DEFAULT = 240;
+const RIGHT_DEFAULT = 360;
+const LEFT_MIN = 180;
+const LEFT_MAX = 480;
+const RIGHT_MIN = 240;
+const RIGHT_MAX = 600;
 
 export type View = "brain" | "calendar" | "social" | "graph";
 
@@ -18,6 +25,7 @@ export interface NoteSummary {
   status: string | null;
   dueAt: string | null;
   updatedAt: string;
+  sortIndex?: number;
 }
 
 export interface ActiveNote {
@@ -52,6 +60,70 @@ export default function AppShell({
   // "self" = chat with own agent. Friend id = chat with that friend's agent.
   const [chatTarget, setChatTarget] = useState<string>("self");
 
+  // Resizable sidebars — drag the splitter to set width; dbl-click resets.
+  const [leftW, setLeftW] = useState(LEFT_DEFAULT);
+  const [rightW, setRightW] = useState(RIGHT_DEFAULT);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const l = parseInt(localStorage.getItem("confluent.leftW") || "", 10);
+    const r = parseInt(localStorage.getItem("confluent.rightW") || "", 10);
+    if (!Number.isNaN(l) && l >= LEFT_MIN && l <= LEFT_MAX) setLeftW(l);
+    if (!Number.isNaN(r) && r >= RIGHT_MIN && r <= RIGHT_MAX) setRightW(r);
+  }, []);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("confluent.leftW", String(leftW));
+    }
+  }, [leftW]);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("confluent.rightW", String(rightW));
+    }
+  }, [rightW]);
+
+  const dragRef = useRef<{
+    side: "left" | "right";
+    startX: number;
+    startW: number;
+  } | null>(null);
+  function onSplitterMouseDown(side: "left" | "right") {
+    return (e: React.MouseEvent) => {
+      e.preventDefault();
+      dragRef.current = {
+        side,
+        startX: e.clientX,
+        startW: side === "left" ? leftW : rightW,
+      };
+      const onMove = (ev: MouseEvent) => {
+        const d = dragRef.current;
+        if (!d) return;
+        const delta = ev.clientX - d.startX;
+        if (d.side === "left") {
+          const next = Math.max(LEFT_MIN, Math.min(LEFT_MAX, d.startW + delta));
+          setLeftW(next);
+        } else {
+          // right side: dragging right shrinks the chat panel
+          const next = Math.max(
+            RIGHT_MIN,
+            Math.min(RIGHT_MAX, d.startW - delta),
+          );
+          setRightW(next);
+        }
+      };
+      const onUp = () => {
+        dragRef.current = null;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+  }
+
   const openNote = useCallback(async (id: string) => {
     const res = await fetch(`/api/notes/${id}`);
     if (!res.ok) return;
@@ -60,11 +132,21 @@ export default function AppShell({
     setView("brain");
   }, []);
 
-  async function createNote() {
+  async function createNote(kind?: string) {
+    const titleByKind: Record<string, string> = {
+      daily: "Untitled daily",
+      project: "Untitled project",
+      task: "New task",
+      note: "Untitled",
+      person: "Untitled person",
+    };
     const res = await fetch("/api/notes", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: "Untitled" }),
+      body: JSON.stringify({
+        title: titleByKind[kind || "note"] || "Untitled",
+        kind: kind || "note",
+      }),
     });
     if (!res.ok) return;
     const j = (await res.json()) as { note: ActiveNote & { updatedAt: string } };
@@ -77,6 +159,39 @@ export default function AppShell({
     ]);
     setActive(j.note);
     setView("brain");
+  }
+
+  async function deleteNote(id: string) {
+    const res = await fetch(`/api/notes/${id}`, { method: "DELETE" });
+    if (!res.ok) return;
+    setAllNotes((cur) => cur.filter((n) => n.id !== id));
+    setActive((cur) => (cur && cur.id === id ? null : cur));
+  }
+
+  async function moveNote(noteId: string, newSortIndex: number, newKind?: string) {
+    // Optimistic update
+    setAllNotes((cur) =>
+      cur.map((n) =>
+        n.id === noteId
+          ? { ...n, kind: newKind || n.kind, sortIndex: newSortIndex }
+          : n,
+      ),
+    );
+    const body: Record<string, unknown> = { sort_index: newSortIndex };
+    if (newKind) body.kind = newKind;
+    const res = await fetch(`/api/notes/${noteId}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      // Refetch on failure to recover ground truth
+      const r = await fetch("/api/notes");
+      if (r.ok) {
+        const j = (await r.json()) as { notes: NoteSummary[] };
+        setAllNotes(j.notes);
+      }
+    }
   }
 
   async function logout() {
@@ -121,7 +236,12 @@ export default function AppShell({
       : "Brain map";
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      style={{
+        gridTemplateColumns: `${leftW}px 6px minmax(0, 1fr) 6px ${rightW}px`,
+      }}
+    >
       <div className="topbar">
         <div className="tb-dots">
           <span className="tb-dot"></span>
@@ -174,11 +294,19 @@ export default function AppShell({
         activeId={active?.id ?? null}
         onOpen={openNote}
         onCreate={createNote}
+        onDelete={deleteNote}
+        onMoveNote={moveNote}
         user={user}
         onLogout={logout}
         onOpenSearch={() => setSearchOpen(true)}
         chatTarget={chatTarget}
         onChatWith={setChatTarget}
+      />
+
+      <Splitter
+        onMouseDown={onSplitterMouseDown("left")}
+        onDoubleClick={() => setLeftW(LEFT_DEFAULT)}
+        title="Drag to resize · double-click to reset"
       />
 
       {view === "brain" ? (
@@ -195,6 +323,12 @@ export default function AppShell({
         <GraphView onPick={openNote} />
       )}
 
+      <Splitter
+        onMouseDown={onSplitterMouseDown("right")}
+        onDoubleClick={() => setRightW(RIGHT_DEFAULT)}
+        title="Drag to resize · double-click to reset"
+      />
+
       <ChatPanel target={chatTarget} setTarget={setChatTarget} />
 
       {searchOpen && (
@@ -208,5 +342,34 @@ export default function AppShell({
         />
       )}
     </div>
+  );
+}
+
+function Splitter({
+  onMouseDown,
+  onDoubleClick,
+  title,
+}: {
+  onMouseDown: (e: React.MouseEvent) => void;
+  onDoubleClick: () => void;
+  title?: string;
+}) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      onDoubleClick={onDoubleClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title={title}
+      style={{
+        cursor: "col-resize",
+        background: hover ? "var(--border)" : "transparent",
+        transition: "background 120ms",
+        borderLeft: "1px solid var(--border-soft)",
+        borderRight: "1px solid var(--border-soft)",
+        zIndex: 5,
+      }}
+    />
   );
 }

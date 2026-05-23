@@ -21,10 +21,9 @@ export default async function Home({
   } catch {
     notesRaw = [];
   }
-  const notes = notesRaw
-    .slice()
-    .sort((a, b) => (a.updated_at || "") < (b.updated_at || "") ? 1 : -1)
-    .map(toUiNoteSummary);
+  // Backend already returns notes sorted by sort_index ascending (with
+  // updated_at desc fallback for notes that don't have one yet). Keep that.
+  const notes = notesRaw.map(toUiNoteSummary);
 
   let activeNote = null;
   const wantSlug = sp?.note;

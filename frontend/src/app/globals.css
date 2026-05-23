@@ -112,6 +112,13 @@ input, textarea { font-family: inherit; color: inherit; }
 }
 
 /* Sidebar */
+.sb-item-del {
+  opacity: 0;
+  transition: opacity 100ms, color 100ms;
+}
+.sb-item:hover .sb-item-del { opacity: 1; }
+.sb-item-del:hover { color: #ef4444 !important; }
+
 .sidebar {
   border-right: 1px solid var(--border-soft);
   background: var(--bg-sunken);

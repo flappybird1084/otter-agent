@@ -29,6 +29,7 @@ export async function PUT(
       kind?: string;
       status?: string;
       due_at?: string;
+      sort_index?: number;
     };
     const updated = await api.updateNote(user.id, id, {
       title: body.title,
@@ -36,6 +37,7 @@ export async function PUT(
       kind: body.kind,
       status: body.status,
       due_at: body.due_at,
+      sort_index: body.sort_index,
     });
     return NextResponse.json({ note: toUiActiveNote(updated) });
   } catch {
