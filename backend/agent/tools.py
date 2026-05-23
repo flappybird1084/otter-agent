@@ -447,7 +447,32 @@ async def execute_tool(
         intent = args["intent"]
         scope_required = args.get("scope_required", "friend")
 
-        # Scope is checked from the RECIPIENT's perspective.
+        # Step 1: validate the friend_id actually points to a real user.
+        friend_user = users_db.get_user(friend_id)
+        if not friend_user:
+            valid_ids = [f["friend_id"] for f in friendships_db.list_friends(actor_user_id)]
+            log_event(
+                type="agent_message_sent",
+                actor_user_id=actor_user_id,
+                target_user_id=None,
+                conversation_id=conversation_id,
+                payload={
+                    "summary": f"Unknown friend_id '{friend_id}'",
+                    "rejected": True,
+                    "reason": "unknown_friend_id",
+                    "attempted_id": friend_id,
+                },
+            )
+            return {
+                "error": "unknown_friend_id",
+                "message": (
+                    f"No user with id '{friend_id}'. Valid friend_ids from list_friends: "
+                    f"{valid_ids}. Always copy friend_id verbatim from list_friends — do not invent it."
+                ),
+            }
+
+        # Step 2: check there's a directed friendship from the recipient back to us
+        # (i.e. they've added us as a friend at all).
         friendship = friendships_db.get_friendship(owner_id=friend_id, friend_id=actor_user_id)
         if not friendship:
             log_event(
@@ -455,10 +480,21 @@ async def execute_tool(
                 actor_user_id=actor_user_id,
                 target_user_id=friend_id,
                 conversation_id=conversation_id,
-                payload={"summary": "Blocked: not friends", "rejected": True},
+                payload={
+                    "summary": f"Blocked: {friend_user.get('display_name', friend_id)} hasn't added you",
+                    "rejected": True,
+                    "reason": "not_friends",
+                },
             )
-            return {"error": "not_friends", "message": "You are not friends with this user."}
+            return {
+                "error": "not_friends",
+                "message": (
+                    f"{friend_user.get('display_name', friend_id)} hasn't added you as a friend, "
+                    f"so their agent won't respond."
+                ),
+            }
 
+        # Step 3: scope check.
         if scope_rank(friendship["scope"]) < scope_rank(scope_required):
             log_event(
                 type="agent_message_sent",
@@ -466,17 +502,24 @@ async def execute_tool(
                 target_user_id=friend_id,
                 conversation_id=conversation_id,
                 payload={
-                    "summary": f"Blocked by scope ({friendship['scope']} < {scope_required})",
+                    "summary": (
+                        f"Blocked by scope: they have you as '{friendship['scope']}', "
+                        f"you asked for '{scope_required}'"
+                    ),
                     "rejected": True,
-                    "friend_scope": friendship["scope"],
+                    "reason": "scope_insufficient",
+                    "their_scope_of_me": friendship["scope"],
                     "scope_required": scope_required,
                 },
             )
             return {
                 "error": "scope_insufficient",
                 "message": (
-                    f"Your scope with {friend_id} is {friendship['scope']}, "
-                    f"but this request requires {scope_required}."
+                    f"{friend_user.get('display_name', friend_id)} has you as "
+                    f"'{friendship['scope']}', which doesn't cover '{scope_required}'-tier data. "
+                    f"Either retry with scope_required='{friendship['scope']}' (and accept the "
+                    f"data you can get) or tell your user that {friend_user.get('display_name', friend_id)} "
+                    f"hasn't granted them that level of access."
                 ),
             }
 

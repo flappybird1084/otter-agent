@@ -35,11 +35,21 @@ function rowLabel(e: AgentEvent, users: User[]) {
         text: `${aName}'s agent: ${e.payload?.summary || e.payload?.tool_name}`,
       };
     case "agent_message_sent":
+      if (e.payload?.rejected) {
+        const reason = (e.payload as Record<string, unknown>)?.reason;
+        const arrow = e.target_user_id ? `${a} ⨯ ${b}` : `${a} ⨯ ?`;
+        return {
+          glyph: arrow,
+          text: `${aName}'s agent: ${e.payload?.summary || "Blocked"} ${
+            reason ? `(${String(reason)})` : ""
+          }`.trim(),
+        };
+      }
       return {
         glyph: `${a} → ${b}`,
         text: `${aName}'s agent → ${bName}'s agent: ${
           e.payload?.summary || "(message)"
-        }${e.payload?.rejected ? "  [BLOCKED]" : ""}`,
+        }`,
       };
     case "agent_message_received":
       return {
