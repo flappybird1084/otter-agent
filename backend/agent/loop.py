@@ -12,7 +12,7 @@ from typing import Literal
 
 from db import users as users_db
 from db import inbox as inbox_db
-from db.chat import write_chat_message
+from db.chat import write_chat_message, list_chat_messages_for_conversation
 from db.events import log_event
 
 from .llm import LLMResponse, Turn, ToolCall, get_llm
@@ -61,7 +61,19 @@ async def run_agent_turn(
     )
 
     llm = get_llm()
-    turns: list[Turn] = [Turn(role="user", content=input)]
+    turns: list[Turn] = []
+    if mode == "user_chat":
+        # Seed with prior conversation so the agent has memory across turns.
+        history = list_chat_messages_for_conversation(user_id, conversation_id)
+        for m in history:
+            if m["role"] == "user":
+                turns.append(Turn(role="user", content=m["content"]))
+            elif m["role"] == "agent":
+                turns.append(Turn(role="model", content=m["content"]))
+    # Make sure the current user input is the trailing user turn.
+    # (history may already include it if main.py persisted it first.)
+    if not turns or turns[-1].role != "user" or turns[-1].content != input:
+        turns.append(Turn(role="user", content=input))
 
     async def a2a_dispatch(inbox_id: str) -> dict:
         # In-process recursive dispatch. Same code path as POST /agent-to-agent.

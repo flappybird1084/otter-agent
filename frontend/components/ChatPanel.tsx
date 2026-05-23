@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api } from "@/lib/api";
 import type { ChatMessage, User } from "@/lib/types";
 
@@ -38,10 +40,28 @@ export function ChatPanel({
   const [busy, setBusy] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const convStorageKey = `confluent.conv.${userId}`;
+
+  // Hydrate conversation id from localStorage so memory survives page refresh.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(convStorageKey);
+    if (saved) setConversationId(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !conversationId) return;
+    window.localStorage.setItem(convStorageKey, conversationId);
+  }, [conversationId, convStorageKey]);
 
   async function refresh() {
+    if (!conversationId) {
+      setMessages([]);
+      return;
+    }
     try {
-      const ms = await api.getChat(userId);
+      const ms = await api.getChat(userId, conversationId);
       setMessages(ms);
     } catch {}
   }
@@ -51,7 +71,17 @@ export function ChatPanel({
     const id = setInterval(refresh, 1200);
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+  }, [userId, conversationId]);
+
+  function startNewChat() {
+    if (busy) return;
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(convStorageKey);
+    }
+    setConversationId(null);
+    setMessages([]);
+    setInput("");
+  }
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -108,15 +138,25 @@ export function ChatPanel({
             <div className="text-[11px] text-zinc-500">Your agent</div>
           </div>
         </div>
-        <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={demoMode}
-            onChange={onToggleDemoMode}
-            className="accent-emerald-500"
-          />
-          Demo mode
-        </label>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={startNewChat}
+            disabled={busy}
+            title="Start a new conversation"
+            className="text-xs px-2 py-1 rounded-md border border-zinc-800 text-zinc-300 hover:border-zinc-600 hover:bg-zinc-900 disabled:opacity-50"
+          >
+            New chat
+          </button>
+          <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={demoMode}
+              onChange={onToggleDemoMode}
+              className="accent-emerald-500"
+            />
+            Demo mode
+          </label>
+        </div>
       </div>
 
       <div
@@ -132,13 +172,15 @@ export function ChatPanel({
           <div
             key={m.id}
             className={
-              "max-w-[88%] rounded-lg px-3 py-2 text-sm leading-relaxed " +
+              "max-w-[88%] rounded-lg px-3 py-2 text-sm leading-relaxed prose-confluent chat-md " +
               (m.role === "user"
                 ? "ml-auto bg-emerald-700/30 text-emerald-50 border border-emerald-800/60"
                 : "bg-zinc-900 text-zinc-100 border border-zinc-800")
             }
           >
-            {m.content}
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {m.content}
+            </ReactMarkdown>
           </div>
         ))}
         {busy && (
