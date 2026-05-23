@@ -84,7 +84,7 @@ class VertexLLM(LLM):
             system_instruction=system,
             generation_config=self._GenerationConfig(
                 temperature=0.3,
-                max_output_tokens=1024,
+                max_output_tokens=4096,
             ),
         )
 
@@ -126,6 +126,25 @@ class VertexLLM(LLM):
                     t = getattr(part, "text", None)
                     if t:
                         text = (text or "") + t
+
+        # Diagnostic: empty responses are usually MAX_TOKENS or SAFETY. Surface
+        # the finish reason so the operator can see what went wrong.
+        if not text and not tool_calls:
+            try:
+                cand0 = resp.candidates[0] if resp.candidates else None
+                finish = getattr(cand0, "finish_reason", None) if cand0 else None
+                parts_count = len(cand0.content.parts) if (cand0 and getattr(cand0, "content", None)) else 0
+                print(
+                    f"[VertexLLM] EMPTY response — finish_reason={finish}, parts={parts_count}, "
+                    f"model={self._model_name}",
+                    flush=True,
+                )
+                pf = getattr(resp, "prompt_feedback", None)
+                if pf:
+                    print(f"[VertexLLM] prompt_feedback={pf}", flush=True)
+            except Exception as exc:
+                print(f"[VertexLLM] could not introspect empty response: {exc}", flush=True)
+
         return LLMResponse(text=text, tool_calls=tool_calls)
 
 
