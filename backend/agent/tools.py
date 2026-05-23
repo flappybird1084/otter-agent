@@ -21,6 +21,7 @@ from db.events import log_event
 from db.store import get_store, new_id, utcnow_iso
 
 from .scope import SCOPE_RANK, scope_rank, filter_event_for_viewer
+from .timeutil import now_pacific, now_utc
 
 
 # ---------------------------------------------------------------------------
@@ -308,11 +309,11 @@ TOOL_DECLARATIONS = _LazyDeclarations()
 
 
 def _today_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return now_pacific().strftime("%Y-%m-%d")
 
 
 def _date_plus(days: int) -> str:
-    return (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%d")
+    return (now_pacific() + timedelta(days=days)).strftime("%Y-%m-%d")
 
 
 async def execute_tool(
@@ -536,15 +537,16 @@ async def execute_tool(
         return {"ok": True}
 
     if name == "get_current_time":
-        now_utc = datetime.now(timezone.utc)
-        now_local = datetime.now()
+        u = now_utc()
+        local = now_pacific()
         return {
-            "iso_utc": now_utc.isoformat(),
-            "iso_local": now_local.isoformat(),
-            "human": now_local.strftime("%A, %B %d, %Y at %I:%M %p"),
-            "weekday": now_local.strftime("%A"),
-            "date": now_local.strftime("%Y-%m-%d"),
-            "time": now_local.strftime("%H:%M"),
+            "iso_utc": u.isoformat(),
+            "iso_local": local.isoformat(),
+            "human": local.strftime("%A, %B %d, %Y at %I:%M %p Pacific time"),
+            "weekday": local.strftime("%A"),
+            "date": local.strftime("%Y-%m-%d"),
+            "time": local.strftime("%H:%M"),
+            "timezone": "America/Los_Angeles",
         }
 
     if name == "create_note":
