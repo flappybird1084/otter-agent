@@ -71,43 +71,171 @@ function NoteIcon({ kind }: { kind: string }) {
   );
 }
 
+interface DragPayload {
+  noteId: string;
+  fromKind: string;
+}
+
+function midpointIndex(before: number | undefined, after: number | undefined): number {
+  if (before === undefined && after === undefined) return 0;
+  if (before === undefined) return (after as number) - 1;
+  if (after === undefined) return before + 1;
+  return (before + after) / 2;
+}
+
 function TreeGroup({
   label,
+  kind,
   notes,
   activeId,
   onOpen,
+  onCreateInGroup,
+  onDelete,
+  onMoveNote,
 }: {
   label: string;
+  kind: string;
   notes: NoteSummary[];
   activeId: string | null;
   onOpen: (id: string) => void;
+  onCreateInGroup?: (kind: string) => void;
+  onDelete?: (noteId: string) => void;
+  onMoveNote?: (noteId: string, newSortIndex: number, newKind?: string) => void;
 }) {
   const [open, setOpen] = useState(true);
-  if (!notes.length) return null;
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  function readPayload(e: React.DragEvent): DragPayload | null {
+    try {
+      const raw = e.dataTransfer.getData("application/x-note");
+      if (!raw) return null;
+      return JSON.parse(raw) as DragPayload;
+    } catch {
+      return null;
+    }
+  }
+
+  function handleDrop(e: React.DragEvent, insertAt: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    setHoverIdx(null);
+    const payload = readPayload(e);
+    if (!payload || !onMoveNote) return;
+    // Skip the moved item from sibling list when computing neighbors so it
+    // doesn't try to slot between itself.
+    const siblings = notes.filter((n) => n.id !== payload.noteId);
+    const before = siblings[insertAt - 1]?.sortIndex;
+    const after = siblings[insertAt]?.sortIndex;
+    const newSort = midpointIndex(before, after);
+    const newKind = payload.fromKind !== kind ? kind : undefined;
+    onMoveNote(payload.noteId, newSort, newKind);
+  }
+
+  function allowDrop(e: React.DragEvent) {
+    if (e.dataTransfer.types.includes("application/x-note")) {
+      e.preventDefault();
+    }
+  }
+
   return (
     <div className="sb-tree-group">
-      <button
-        type="button"
+      <div
         className={`sb-tree-label${open ? "" : " collapsed"}`}
+        style={{ display: "flex", alignItems: "center", cursor: "pointer", userSelect: "none" }}
         onClick={() => setOpen((v) => !v)}
+        onDragOver={allowDrop}
+        onDrop={(e) => handleDrop(e, notes.length)}
       >
         <span className="chev">▾</span>
         <span>{label}</span>
         <span style={{ marginLeft: "auto", color: "var(--fg-faint)", fontSize: 10 }}>{notes.length}</span>
-      </button>
+        {onCreateInGroup && (
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onCreateInGroup(kind); }}
+            title={`New ${kind}`}
+            style={{
+              marginLeft: 6, width: 16, height: 16, padding: 0,
+              background: "transparent", border: "1px solid var(--border-soft)",
+              borderRadius: 4, cursor: "pointer", fontSize: 11, lineHeight: 1,
+              color: "var(--fg-mute)",
+            }}
+          >+</button>
+        )}
+      </div>
       {open && (
-        <div className="sb-tree-children">
-          {notes.map((n) => (
-            <button
-              type="button"
-              key={n.id}
-              className={`sb-item ${activeId === n.id ? "active" : ""}`}
-              onClick={() => onOpen(n.id)}
-            >
-              <span className="icon"><NoteIcon kind={n.kind} /></span>
-              <span className="title-text">{n.title}</span>
-            </button>
-          ))}
+        <div
+          className="sb-tree-children"
+          onDragOver={allowDrop}
+          onDrop={(e) => handleDrop(e, notes.length)}
+        >
+          {notes.length === 0 && (
+            <div style={{
+              padding: "6px 10px", fontSize: 11, color: "var(--fg-faint)",
+              fontStyle: "italic",
+            }}>
+              — empty — drag here or +
+            </div>
+          )}
+          {notes.map((n, i) => {
+            const isActive = activeId === n.id;
+            const isHover = hoverIdx === i;
+            return (
+              <div key={n.id} style={{ position: "relative" }}>
+                {isHover && (
+                  <div
+                    style={{
+                      position: "absolute", top: -1, left: 6, right: 6,
+                      height: 2, background: "var(--accent)", borderRadius: 1,
+                      pointerEvents: "none",
+                    }}
+                  />
+                )}
+                <div
+                  className={`sb-item ${isActive ? "active" : ""}`}
+                  draggable
+                  onClick={() => onOpen(n.id)}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData(
+                      "application/x-note",
+                      JSON.stringify({ noteId: n.id, fromKind: n.kind }),
+                    );
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  onDragOver={(e) => {
+                    if (e.dataTransfer.types.includes("application/x-note")) {
+                      e.preventDefault();
+                      setHoverIdx(i);
+                    }
+                  }}
+                  onDragLeave={() => setHoverIdx((cur) => (cur === i ? null : cur))}
+                  onDrop={(e) => handleDrop(e, i)}
+                  style={{ cursor: "grab", paddingRight: 4 }}
+                >
+                  <span className="icon"><NoteIcon kind={n.kind} /></span>
+                  <span className="title-text">{n.title}</span>
+                  {onDelete && (
+                    <button
+                      type="button"
+                      className="sb-item-del"
+                      title="Delete note"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm(`Delete "${n.title}"?`)) onDelete(n.id);
+                      }}
+                      style={{
+                        marginLeft: "auto",
+                        width: 16, height: 16, padding: 0,
+                        background: "transparent", border: "none",
+                        color: "var(--fg-faint)", cursor: "pointer",
+                        fontSize: 12, lineHeight: 1,
+                      }}
+                    >×</button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -121,6 +249,8 @@ export default function Sidebar({
   activeId,
   onOpen,
   onCreate,
+  onDelete,
+  onMoveNote,
   user,
   onLogout,
   onOpenSearch,
@@ -132,7 +262,9 @@ export default function Sidebar({
   notes: NoteSummary[];
   activeId: string | null;
   onOpen: (id: string) => void;
-  onCreate: () => void;
+  onCreate: (kind?: string) => void;
+  onDelete?: (noteId: string) => void;
+  onMoveNote?: (noteId: string, newSortIndex: number, newKind?: string) => void;
   user: AppUser;
   onLogout: () => void;
   onOpenSearch: () => void;
@@ -243,20 +375,32 @@ export default function Sidebar({
 
       <div className="sb-section">
         <span>Notes</span>
-        <button type="button" title="New note" onClick={onCreate}>+</button>
+        <button type="button" title="New note" onClick={() => onCreate()}>+</button>
       </div>
       <div className="sb-tree">
         {GROUPS.map((g) => (
           <TreeGroup
             key={g.id}
             label={g.label}
+            kind={g.kinds[0]}
             notes={grouped.map[g.id]}
             activeId={activeId}
             onOpen={onOpen}
+            onCreateInGroup={onCreate}
+            onDelete={onDelete}
+            onMoveNote={onMoveNote}
           />
         ))}
         {grouped.other.length > 0 && (
-          <TreeGroup label="Other" notes={grouped.other} activeId={activeId} onOpen={onOpen} />
+          <TreeGroup
+            label="Other"
+            kind="note"
+            notes={grouped.other}
+            activeId={activeId}
+            onOpen={onOpen}
+            onDelete={onDelete}
+            onMoveNote={onMoveNote}
+          />
         )}
 
         {friends.length > 0 && (
