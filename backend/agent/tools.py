@@ -45,6 +45,40 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
             "required": ["query"],
         },
     },
+    "list_notes_filtered": {
+        "name": "list_notes_filtered",
+        "description": (
+            "List the current user's notes with structured filters. All provided "
+            "filters AND together. Use this when you know exactly what you want; "
+            "use search_notes when you want fuzzy ranking. Returns id, title, tags, "
+            "share_tier, and a snippet for each match. In inbox mode, results are "
+            "also scope-filtered so you only see what your viewer can see."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tag": {"type": "string", "description": "Exact tag match (case-insensitive)."},
+                "tags_any": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Match notes that have ANY of these tags (case-insensitive).",
+                },
+                "name_contains": {
+                    "type": "string",
+                    "description": "Substring of the note title (case-insensitive).",
+                },
+                "body_contains": {
+                    "type": "string",
+                    "description": "Substring grep across the markdown body (case-insensitive).",
+                },
+                "share_tier": {
+                    "type": "string",
+                    "enum": ["private", "friends", "close_friends", "family"],
+                },
+                "limit": {"type": "integer", "description": "Max results. Default 20."},
+            },
+        },
+    },
     "read_note": {
         "name": "read_note",
         "description": "Fetch the full markdown of a specific note by id. Use after search_notes identifies a relevant one.",
@@ -287,14 +321,15 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
 
 SELF_TOOLS = [
     "get_current_time",
-    "search_notes", "read_note", "create_note", "update_note", "delete_note",
+    "search_notes", "list_notes_filtered", "read_note",
+    "create_note", "update_note", "delete_note",
     "read_calendar", "create_calendar_event", "delete_calendar_event",
     "list_friends", "set_friend_scope",
     "message_friend", "message_friends", "propose_event",
 ]
 INBOX_TOOLS = [
     "get_current_time",
-    "search_notes", "read_note",
+    "search_notes", "list_notes_filtered", "read_note",
     "read_calendar",
     "list_friends",
     "reply_to_agent",
@@ -350,6 +385,49 @@ async def execute_tool(
 
     if name == "search_notes":
         return notes_db.search_notes(actor_user_id, args.get("query", ""), int(args.get("limit") or 5))
+
+    if name == "list_notes_filtered":
+        from .scope import can_see_note_share_tier
+
+        store = get_store()
+        rows = notes_db.list_notes(actor_user_id)
+        tag = (args.get("tag") or "").strip().lower()
+        tags_any = [t.lower() for t in (args.get("tags_any") or []) if t]
+        name_q = (args.get("name_contains") or "").strip().lower()
+        body_q = (args.get("body_contains") or "").strip().lower()
+        share_tier = args.get("share_tier")
+        limit = int(args.get("limit") or 20)
+
+        out = []
+        for n in rows:
+            note_tags = [t.lower() for t in (n.get("tags") or [])]
+            if tag and tag not in note_tags:
+                continue
+            if tags_any and not any(t in note_tags for t in tags_any):
+                continue
+            if name_q and name_q not in (n.get("title") or "").lower():
+                continue
+            if share_tier and n.get("share_tier") != share_tier:
+                continue
+            body = store.read_note(actor_user_id, n["id"])
+            if body_q and body_q not in body.lower():
+                continue
+            # In inbox mode, hide notes the viewer's scope can't see at all.
+            if viewer_scope is not None and not can_see_note_share_tier(
+                viewer_scope, n.get("share_tier", "private")
+            ):
+                continue
+            snippet = body[:240].replace("\n", " ").strip()
+            out.append({
+                "id": n["id"],
+                "title": n.get("title"),
+                "tags": n.get("tags", []),
+                "share_tier": n.get("share_tier"),
+                "snippet": snippet,
+            })
+            if len(out) >= limit:
+                break
+        return out
 
     if name == "read_note":
         note = notes_db.get_note(args.get("note_id", ""))

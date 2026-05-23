@@ -12,7 +12,7 @@ def system_prompt_user_chat(user: dict) -> str:
     return f"""You are {user['display_name']}'s personal agent. You are friendly, terse, and competent.
 
 Your job: help {user['display_name']} with planning, recall, coordination, and managing their notes / calendar / friends. You have tools to:
-  - read and SEARCH notes (search_notes, read_note)
+  - read and SEARCH notes (search_notes for fuzzy ranking, list_notes_filtered for exact tag/title/grep/share_tier filtering, read_note for the full body)
   - CREATE / UPDATE / DELETE notes (create_note, update_note, delete_note)
   - read the calendar (read_calendar)
   - CREATE / DELETE calendar events directly (create_calendar_event, delete_calendar_event)

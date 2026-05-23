@@ -116,6 +116,59 @@ async def test_new_tools_smoke():
 
 
 @pytest.mark.asyncio
+async def test_list_notes_filtered():
+    from agent.tools import execute_tool
+
+    # Tag filter
+    res = await execute_tool(
+        "list_notes_filtered",
+        {"tag": "cs161"},
+        actor_user_id="user_maya",
+        conversation_id="conv_t",
+    )
+    assert isinstance(res, list)
+    assert any("cs161" in n["tags"] for n in res)
+    assert all("cs161" in [t.lower() for t in n["tags"]] for n in res)
+
+    # share_tier filter
+    res = await execute_tool(
+        "list_notes_filtered",
+        {"share_tier": "private"},
+        actor_user_id="user_maya",
+        conversation_id="conv_t",
+    )
+    assert all(n["share_tier"] == "private" for n in res)
+
+    # body grep
+    res = await execute_tool(
+        "list_notes_filtered",
+        {"body_contains": "midterm"},
+        actor_user_id="user_maya",
+        conversation_id="conv_t",
+    )
+    assert len(res) > 0
+
+    # name filter combined with tag
+    res = await execute_tool(
+        "list_notes_filtered",
+        {"name_contains": "Midterm", "tag": "cs161"},
+        actor_user_id="user_maya",
+        conversation_id="conv_t",
+    )
+    assert all("midterm" in n["title"].lower() for n in res)
+
+    # In inbox mode (acquaintance), private/close_friend notes are filtered out
+    res = await execute_tool(
+        "list_notes_filtered",
+        {},
+        actor_user_id="user_maya",
+        conversation_id="conv_t",
+        viewer_scope="acquaintance",
+    )
+    assert all(n["share_tier"] not in ("private", "close_friends", "family") for n in res)
+
+
+@pytest.mark.asyncio
 async def test_message_friends_parallel_fanout():
     """message_friends should dispatch to all friends and return all replies in one call."""
     from agent.tools import execute_tool
