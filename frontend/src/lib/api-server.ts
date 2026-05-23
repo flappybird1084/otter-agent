@@ -65,6 +65,25 @@ export const api = {
   getUser: (id: string) => backend<BackendUser>(`/users/${id}`),
   getFriends: (id: string) => backend<BackendFriendship[]>(`/friends/${id}`),
   getAllFriendships: () => backend<BackendFriendship[]>(`/friendships`),
+  getSocial: (id: string) =>
+    backend<{
+      me: { id: string; display_name: string };
+      friends: Array<{
+        id: string;
+        display_name: string;
+        handle: string;
+        avatar_emoji?: string;
+        my_scope_of_them: BackendScope;
+        their_scope_of_me: BackendScope | null;
+        visible_notes: Array<{
+          id: string;
+          title: string;
+          slug?: string;
+          kind?: string;
+          share_tier?: string;
+        }>;
+      }>;
+    }>(`/social/${id}`),
   setScope: (ownerId: string, friendId: string, scope: BackendScope) =>
     backend<{ ok: true }>(`/friends/${ownerId}/scope`, {
       method: "POST",

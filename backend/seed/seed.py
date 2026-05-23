@@ -129,6 +129,7 @@ NOTES: list[dict] = [
     {"id": "note_maya_todo", "user_id": "user_maya", "title": "This week's TODOs", "slug": "this-weeks-todos", "kind": "task", "status": "doing", "tags": ["todo"], "share_tier": "close_friends"},
     {"id": "note_maya_cs109_review", "user_id": "user_maya", "title": "CS109 — probability review", "slug": "cs109-probability-review", "kind": "note", "tags": ["cs109"], "share_tier": "friends"},
     {"id": "note_maya_recipe", "user_id": "user_maya", "title": "Mom's dal recipe", "slug": "moms-dal-recipe", "kind": "note", "tags": ["recipe"], "share_tier": "family"},
+    {"id": "note_maya_bio", "user_id": "user_maya", "title": "About me", "slug": "about-me", "kind": "person", "tags": ["bio"], "share_tier": "public"},
 
     # ----- Priya -----
     {"id": "note_priya_cs161_midterm", "user_id": "user_priya", "title": "CS161 Midterm — clean notes", "slug": "cs161-midterm-clean-notes", "kind": "project", "tags": ["cs161", "midterm"], "share_tier": "close_friends"},
@@ -137,6 +138,8 @@ NOTES: list[dict] = [
     {"id": "note_priya_journal", "user_id": "user_priya", "title": "Journal", "slug": "journal", "kind": "daily", "tags": ["journal"], "share_tier": "private"},
     {"id": "note_priya_volunteer", "user_id": "user_priya", "title": "Hospital volunteer hours", "slug": "hospital-volunteer-hours", "kind": "task", "tags": ["volunteer"], "share_tier": "friends"},
     {"id": "note_priya_cs161_dp", "user_id": "user_priya", "title": "Dynamic programming — worked examples", "slug": "dynamic-programming-worked-examples", "kind": "note", "tags": ["cs161", "dp"], "share_tier": "close_friends"},
+    {"id": "note_priya_bio", "user_id": "user_priya", "title": "About me", "slug": "about-me", "kind": "person", "tags": ["bio"], "share_tier": "public"},
+    {"id": "note_priya_reading", "user_id": "user_priya", "title": "Reading list this quarter", "slug": "reading-list-this-quarter", "kind": "note", "tags": ["reading"], "share_tier": "public"},
 
     # ----- Devon -----
     {"id": "note_devon_setlist", "user_id": "user_devon", "title": "Open mic setlist", "slug": "open-mic-setlist", "kind": "project", "tags": ["music"], "share_tier": "friends"},
@@ -145,6 +148,8 @@ NOTES: list[dict] = [
     {"id": "note_devon_essay", "user_id": "user_devon", "title": "Essay outline", "slug": "essay-outline", "kind": "project", "tags": ["writing"], "share_tier": "close_friends"},
     {"id": "note_devon_packing", "user_id": "user_devon", "title": "Packing list — tour", "slug": "packing-list-tour", "kind": "task", "tags": ["travel"], "share_tier": "friends"},
     {"id": "note_devon_journal", "user_id": "user_devon", "title": "Journal", "slug": "journal", "kind": "daily", "tags": ["journal"], "share_tier": "private"},
+    {"id": "note_devon_bio", "user_id": "user_devon", "title": "About me", "slug": "about-me", "kind": "person", "tags": ["bio"], "share_tier": "public"},
+    {"id": "note_devon_shows", "user_id": "user_devon", "title": "Upcoming shows", "slug": "upcoming-shows", "kind": "note", "tags": ["music", "live"], "share_tier": "public"},
 ]
 
 

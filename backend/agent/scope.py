@@ -17,9 +17,20 @@ def can_see_calendar_titles(scope: str) -> bool:
     return scope_rank(scope) >= SCOPE_RANK["friend"]
 
 
-def can_see_note_share_tier(scope: str, share_tier: str) -> bool:
+def can_see_note_share_tier(scope: str | None, share_tier: str) -> bool:
+    """Returns True iff a viewer with `scope` may read a note with `share_tier`.
+
+    Tiers from most-restrictive to most-open:
+      private        — only the owner
+      family         — only family-scoped viewers
+      close_friends  — close_friend and above
+      friends        — friend and above
+      public         — anyone, even non-friends (no scope required)
+    """
     if share_tier == "private":
         return False
+    if share_tier == "public":
+        return True
     if share_tier == "family":
         return scope_rank(scope) >= SCOPE_RANK["family"]
     if share_tier == "close_friends":

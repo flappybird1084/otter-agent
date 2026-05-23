@@ -123,6 +123,58 @@ def get_user(user_id: str) -> dict:
     return u
 
 
+@app.get("/social/{viewer_user_id}")
+def get_social(viewer_user_id: str) -> dict:
+    """For the social graph: each friend + the notes from that friend the
+    viewer is allowed to read (after share_tier × reciprocal-scope filtering)."""
+    from agent.scope import can_see_note_share_tier
+
+    me = users_db.get_user(viewer_user_id)
+    if not me:
+        raise HTTPException(404, "user not found")
+
+    # Build per-friend visible notes. For each friend, the friend's scope of
+    # ME governs what I see of their notes. Public notes are visible to anyone.
+    rows = friendships_db.list_friends(viewer_user_id)
+    out_friends: list[dict] = []
+    for f in rows:
+        other = users_db.get_user(f["friend_id"]) or {}
+        # How the friend scopes me — governs what I can read from them
+        their_view_of_me = friendships_db.get_friendship(
+            owner_id=f["friend_id"], friend_id=viewer_user_id,
+        )
+        their_scope = (their_view_of_me or {}).get("scope")
+
+        friend_notes = notes_db.list_notes(f["friend_id"])
+        visible = []
+        for n in friend_notes:
+            tier = n.get("share_tier", "private")
+            if not can_see_note_share_tier(their_scope, tier):
+                continue
+            visible.append({
+                "id": n["id"],
+                "title": n.get("title"),
+                "slug": n.get("slug"),
+                "kind": n.get("kind", "note"),
+                "share_tier": tier,
+            })
+
+        out_friends.append({
+            "id": f["friend_id"],
+            "display_name": other.get("display_name"),
+            "handle": other.get("handle"),
+            "avatar_emoji": other.get("avatar_emoji"),
+            "my_scope_of_them": f.get("scope"),
+            "their_scope_of_me": their_scope,
+            "visible_notes": visible,
+        })
+
+    return {
+        "me": {"id": me["id"], "display_name": me.get("display_name")},
+        "friends": out_friends,
+    }
+
+
 @app.get("/friendships")
 def get_all_friendships() -> list[dict]:
     """All directed friendship docs (A→B), enriched with the friend's display info."""
