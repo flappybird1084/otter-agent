@@ -116,6 +116,23 @@ def get_user(user_id: str) -> dict:
     return u
 
 
+@app.get("/friendships")
+def get_all_friendships() -> list[dict]:
+    """All directed friendship docs (A→B), enriched with the friend's display info."""
+    from db.store import get_store as _get_store
+    rows = _get_store().query("friendships")
+    out = []
+    for r in rows:
+        other = users_db.get_user(r["friend_id"]) or {}
+        out.append({
+            **r,
+            "display_name": other.get("display_name"),
+            "handle": other.get("handle"),
+            "avatar_emoji": other.get("avatar_emoji"),
+        })
+    return out
+
+
 @app.get("/friends/{user_id}")
 def get_friends(user_id: str) -> list[dict]:
     rows = friendships_db.list_friends(user_id)

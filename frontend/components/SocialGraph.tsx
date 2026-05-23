@@ -10,7 +10,25 @@ import ReactFlow, {
   NodeProps,
   Position,
 } from "reactflow";
-import type { AgentEvent, Friendship, User } from "@/lib/types";
+import type { AgentEvent, Friendship, Scope, User } from "@/lib/types";
+
+const SCOPE_RANK: Record<Scope, number> = {
+  acquaintance: 1,
+  friend: 2,
+  close_friend: 3,
+  family: 4,
+};
+
+const SCOPE_STYLE: Record<
+  Scope | "none",
+  { stroke: string; width: number; dash?: string; label: string }
+> = {
+  none: { stroke: "#27272a", width: 1, dash: "4 4", label: "—" },
+  acquaintance: { stroke: "#52525b", width: 1.25, dash: "5 4", label: "Acq" },
+  friend: { stroke: "#a1a1aa", width: 1.75, label: "Friend" },
+  close_friend: { stroke: "#34d399", width: 2.5, label: "Close" },
+  family: { stroke: "#fbbf24", width: 3, label: "Family" },
+};
 
 type EdgeFlash = {
   edgeId: string;
@@ -58,11 +76,13 @@ export function SocialGraph({
   friendships,
   events,
   meId,
+  onNodeClick,
 }: {
   users: User[];
   friendships: Friendship[];
   events: AgentEvent[];
   meId: string;
+  onNodeClick?: (userId: string) => void;
 }) {
   const [flashes, setFlashes] = useState<EdgeFlash[]>([]);
   const [busyNodes, setBusyNodes] = useState<Record<string, number>>({});
@@ -75,42 +95,65 @@ export function SocialGraph({
   }, [users]);
 
   const edges: Edge[] = useMemo(() => {
-    const seen = new Set<string>();
-    const out: Edge[] = [];
+    // Index directed friendships: "owner__friend" -> scope
+    const byPair = new Map<string, Scope>();
     for (const f of friendships) {
-      const a = f.owner_id < f.friend_id ? f.owner_id : f.friend_id;
-      const b = f.owner_id < f.friend_id ? f.friend_id : f.owner_id;
-      const key = `${a}__${b}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({
-        id: key,
-        source: a,
-        target: b,
-        style: { stroke: "#3f3f46", strokeWidth: 1.5 },
-        animated: false,
-      });
+      byPair.set(`${f.owner_id}__${f.friend_id}`, f.scope);
     }
-    // Always render the 3 mutually-friended demo pairs
-    const demoPairs = [
+
+    // Collect all undirected pairs we've seen + the canonical demo pairs
+    const undirected = new Set<string>();
+    const addPair = (a: string, b: string) => {
+      const lo = a < b ? a : b;
+      const hi = a < b ? b : a;
+      undirected.add(`${lo}__${hi}`);
+    };
+    for (const f of friendships) addPair(f.owner_id, f.friend_id);
+    const demoPairs: [string, string][] = [
       ["user_maya", "user_priya"],
       ["user_maya", "user_devon"],
       ["user_priya", "user_devon"],
     ];
     for (const [a, b] of demoPairs) {
-      const key = `${a}__${b}`;
-      if (!seen.has(key) && visibleUsers.find((u) => u.id === a) && visibleUsers.find((u) => u.id === b)) {
-        out.push({
-          id: key,
-          source: a,
-          target: b,
-          style: { stroke: "#27272a", strokeWidth: 1, strokeDasharray: "4 4" },
-          animated: false,
-        });
+      if (visibleUsers.find((u) => u.id === a) && visibleUsers.find((u) => u.id === b)) {
+        addPair(a, b);
       }
     }
+
+    const out: Edge[] = [];
+    for (const key of undirected) {
+      const [a, b] = key.split("__");
+      const ab = byPair.get(`${a}__${b}`);
+      const ba = byPair.get(`${b}__${a}`);
+      // Pick the perspective most relevant to the viewer when they're on
+      // one end. Otherwise show the *lower* of the two scopes (weakest link
+      // determines what data can flow).
+      let scope: Scope | "none" = "none";
+      if (meId === a && ab) scope = ab;
+      else if (meId === b && ba) scope = ba;
+      else if (ab && ba)
+        scope = SCOPE_RANK[ab] <= SCOPE_RANK[ba] ? ab : ba;
+      else scope = ab || ba || "none";
+
+      const style = SCOPE_STYLE[scope];
+      out.push({
+        id: key,
+        source: a,
+        target: b,
+        style: {
+          stroke: style.stroke,
+          strokeWidth: style.width,
+          strokeDasharray: style.dash,
+        },
+        animated: false,
+        label: scope !== "none" ? SCOPE_STYLE[scope].label : undefined,
+        labelStyle: { fill: "#71717a", fontSize: 9 },
+        labelBgStyle: { fill: "#0a0a0c" },
+        labelBgPadding: [4, 2],
+      });
+    }
     return out;
-  }, [friendships, visibleUsers]);
+  }, [friendships, visibleUsers, meId]);
 
   const nodes: Node[] = useMemo(() => {
     return visibleUsers.map((u, i) => ({
@@ -223,6 +266,9 @@ export function SocialGraph({
         zoomOnPinch={false}
         panOnDrag={false}
         proOptions={{ hideAttribution: true }}
+        onNodeClick={(_, node) => {
+          if (onNodeClick && node.id !== meId) onNodeClick(node.id);
+        }}
       >
         <Background gap={20} color="#1f1f23" />
       </ReactFlow>

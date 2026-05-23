@@ -9,6 +9,7 @@ import { SocialGraph } from "@/components/SocialGraph";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { CalendarView } from "@/components/CalendarView";
 import { FriendScopeControls } from "@/components/FriendScopeControls";
+import { ScopePopover } from "@/components/ScopePopover";
 
 type RightTab = "calendar" | "friends";
 
@@ -19,14 +20,17 @@ export default function UserHome({ params }: { params: { userId: string } }) {
   const [user, setUser] = useState<User | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [friendships, setFriendships] = useState<Friendship[]>([]);
+  const [allFriendships, setAllFriendships] = useState<Friendship[]>([]);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [demoMode, setDemoMode] = useState(true);
   const [rightTab, setRightTab] = useState<RightTab>("calendar");
+  const [popoverFriendId, setPopoverFriendId] = useState<string | null>(null);
 
   useEffect(() => {
     api.getUser(userId).then(setUser).catch(() => setUser(null));
     api.listUsers().then(setAllUsers);
     api.getFriends(userId).then(setFriendships);
+    api.getAllFriendships().then(setAllFriendships);
   }, [userId]);
 
   useEffect(() => {
@@ -82,21 +86,53 @@ export default function UserHome({ params }: { params: { userId: string } }) {
               <FriendScopeControls
                 ownerId={userId}
                 friendships={friendships}
-                onChange={(next) =>
+                onChange={(next) => {
                   setFriendships((prev) =>
                     prev.map((p) =>
                       p.friend_id === next.friend_id ? next : p,
                     ),
-                  )
-                }
+                  );
+                  setAllFriendships((prev) =>
+                    prev.map((p) =>
+                      p.owner_id === userId && p.friend_id === next.friend_id
+                        ? { ...p, scope: next.scope }
+                        : p,
+                    ),
+                  );
+                }}
               />
-              <div className="flex-1 min-h-0 border-b border-zinc-900">
+              <div className="flex-1 min-h-0 border-b border-zinc-900 relative">
                 <SocialGraph
                   users={allUsers}
-                  friendships={friendships}
+                  friendships={allFriendships}
                   events={events}
                   meId={userId}
+                  onNodeClick={(uid) => setPopoverFriendId(uid)}
                 />
+                {popoverFriendId && (
+                  <ScopePopover
+                    meId={userId}
+                    friendId={popoverFriendId}
+                    friendships={friendships}
+                    allUsers={allUsers}
+                    onClose={() => setPopoverFriendId(null)}
+                    onChange={(next) => {
+                      setFriendships((prev) =>
+                        prev.map((p) =>
+                          p.friend_id === next.friend_id ? next : p,
+                        ),
+                      );
+                      setAllFriendships((prev) =>
+                        prev.map((p) =>
+                          p.owner_id === userId &&
+                          p.friend_id === next.friend_id
+                            ? { ...p, scope: next.scope }
+                            : p,
+                        ),
+                      );
+                    }}
+                  />
+                )}
               </div>
               <div className="h-60 min-h-60 overflow-hidden">
                 <ActivityFeed events={events} users={allUsers} />
