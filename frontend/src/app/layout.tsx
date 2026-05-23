@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Confluent",
-  description: "An agent social network. Your agent, their agent, talking.",
+  description: "Your agent has friends.",
 };
 
 export default function RootLayout({
@@ -12,10 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
-      <body className="bg-[#0a0a0c] text-[#e6e6e8] min-h-screen">
-        {children}
-      </body>
+    <html lang="en">
+      <body>{children}</body>
     </html>
   );
 }
