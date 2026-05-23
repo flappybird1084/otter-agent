@@ -30,11 +30,16 @@ const KIND_HUE: Record<string, number> = {
 
 // continuous force-sim params, tuned to feel like Obsidian's gentle hum
 const REPULSE = 5200;
+const REPULSE_CROSS = 11000; // stronger push between different clusters
 const SPRING_K = 0.028;
 const SPRING_LEN = 130;
-const CENTER_K = 0.014;
+const CENTER_K = 0.025; // a bit firmer so each cluster holds its island
 const DAMP = 0.82;
 const JIGGLE = 0.07; // brownian noise per frame — keeps it "alive"
+
+function clusterOf(n: { ownerId?: string }): string {
+  return n.ownerId || "self";
+}
 
 export default function GraphView({ onPick }: { onPick: (id: string) => void }) {
   const [data, setData] = useState<{ nodes: GNode[]; edges: GEdge[] } | null>(null);
@@ -117,13 +122,33 @@ export default function GraphView({ onPick }: { onPick: (id: string) => void }) 
     return () => ro.disconnect();
   }, []);
 
+  // cluster centers — "self" plus one per friend, laid out around the canvas
+  const clusterCenters = useMemo(() => {
+    const m = new Map<string, { x: number; y: number }>();
+    if (!data || size.w === 0 || size.h === 0) return m;
+    const cx = size.w / 2, cy = size.h / 2;
+    const friendIds = Array.from(
+      new Set(data.nodes.map((n) => n.ownerId).filter(Boolean) as string[]),
+    );
+    // self sits at the canvas center
+    m.set("self", { x: cx, y: cy });
+    // friends orbit at a radius that scales with viewport
+    const R = Math.max(180, Math.min(size.w, size.h) * 0.34);
+    friendIds.forEach((fid, i) => {
+      // distribute around 3/4 of the circle so they don't all stack the right
+      const a = (i / Math.max(friendIds.length, 1)) * Math.PI * 1.6 - Math.PI * 0.8;
+      m.set(fid, { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) });
+    });
+    return m;
+  }, [data, size.w, size.h]);
+
   // (re)seed simulation when data or container size shows up
   useEffect(() => {
     if (!data || size.w === 0 || size.h === 0) return;
-    const cx = size.w / 2, cy = size.h / 2;
-    // preserve positions for nodes we've already seen; new nodes get placed on a circle
+    // preserve positions for nodes we've already seen; new nodes get placed
+    // near their cluster center with a small random offset
     const prev = new Map(simRef.current.map((s) => [s.id, s]));
-    simRef.current = data.nodes.map((n, i) => {
+    simRef.current = data.nodes.map((n) => {
       const existing = prev.get(n.id);
       if (existing) {
         return {
@@ -135,8 +160,12 @@ export default function GraphView({ onPick }: { onPick: (id: string) => void }) 
           shareTier: n.shareTier,
         };
       }
-      const a = (i * Math.PI * 2) / Math.max(data.nodes.length, 1);
-      const r = 120 + (i % 3) * 40;
+      const c = clusterCenters.get(clusterOf(n)) || {
+        x: size.w / 2, y: size.h / 2,
+      };
+      // small jittered offset so cluster nodes don't spawn on top of each other
+      const a = Math.random() * Math.PI * 2;
+      const r = 40 + Math.random() * 60;
       return {
         id: n.id,
         title: n.title,
@@ -144,29 +173,29 @@ export default function GraphView({ onPick }: { onPick: (id: string) => void }) 
         ownerName: n.ownerName,
         ownerId: n.ownerId,
         shareTier: n.shareTier,
-        x: cx + Math.cos(a) * r,
-        y: cy + Math.sin(a) * r,
+        x: c.x + Math.cos(a) * r,
+        y: c.y + Math.sin(a) * r,
         vx: 0, vy: 0, fixed: false,
       };
     });
-  }, [data, size.w, size.h]);
+  }, [data, size.w, size.h, clusterCenters]);
 
   // continuous force simulation — runs every animation frame
   useEffect(() => {
     if (!data) return;
-    const cx = () => size.w / 2;
-    const cy = () => size.h / 2;
     const step = () => {
       const sim = simRef.current;
       const edges = data.edges;
-      // pairwise repulsion
+      // pairwise repulsion — stronger between different clusters so islands
+      // stay distinct
       for (let i = 0; i < sim.length; i++) {
         for (let j = i + 1; j < sim.length; j++) {
           const A = sim[i], B = sim[j];
           const dx = B.x - A.x, dy = B.y - A.y;
           const d2 = dx * dx + dy * dy + 0.01;
           const d = Math.sqrt(d2);
-          const f = REPULSE / d2;
+          const same = clusterOf(A) === clusterOf(B);
+          const f = (same ? REPULSE : REPULSE_CROSS) / d2;
           const fx = (dx / d) * f, fy = (dy / d) * f;
           if (!A.fixed) { A.vx -= fx; A.vy -= fy; }
           if (!B.fixed) { B.vx += fx; B.vy += fy; }
@@ -184,12 +213,15 @@ export default function GraphView({ onPick }: { onPick: (id: string) => void }) 
         if (!A.fixed) { A.vx += fx; A.vy += fy; }
         if (!B.fixed) { B.vx -= fx; B.vy -= fy; }
       }
-      // centering + jiggle + integrate
-      const ccx = cx(), ccy = cy();
+      // per-cluster centering + jiggle + integrate. Each node is pulled toward
+      // ITS cluster's center, not the screen center, so islands hold position.
       for (const n of sim) {
         if (n.fixed) { n.vx = 0; n.vy = 0; continue; }
-        n.vx += (ccx - n.x) * CENTER_K;
-        n.vy += (ccy - n.y) * CENTER_K;
+        const c = clusterCenters.get(clusterOf(n)) || {
+          x: size.w / 2, y: size.h / 2,
+        };
+        n.vx += (c.x - n.x) * CENTER_K;
+        n.vy += (c.y - n.y) * CENTER_K;
         // tiny brownian wobble — keeps the graph subtly alive
         n.vx += (Math.random() - 0.5) * JIGGLE;
         n.vy += (Math.random() - 0.5) * JIGGLE;
@@ -203,7 +235,7 @@ export default function GraphView({ onPick }: { onPick: (id: string) => void }) 
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     };
-  }, [data, size.w, size.h]);
+  }, [data, size.w, size.h, clusterCenters]);
 
   const neighbors = useMemo(() => {
     if (!selectedId || !data) return null;
