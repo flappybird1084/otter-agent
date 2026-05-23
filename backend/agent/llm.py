@@ -148,16 +148,26 @@ class MockLLM(LLM):
     def generate(self, *, system: str, turns: list[Turn], tool_names: list[str]) -> LLMResponse:
         inbox_mode = "reply_to_agent" in tool_names
 
-        called = {tc.name for t in turns if t.role == "model" for tc in t.tool_calls}
+        # Scope tool-call tracking and tool results to the CURRENT turn only —
+        # everything after the most recent user message. Otherwise prior turns'
+        # tool calls would make us think we'd already done the work this round.
+        last_user_idx = -1
+        for i in range(len(turns) - 1, -1, -1):
+            if turns[i].role == "user":
+                last_user_idx = i
+                break
+        current_segment = turns[last_user_idx + 1 :] if last_user_idx >= 0 else []
+
+        called = {tc.name for t in current_segment if t.role == "model" for tc in t.tool_calls}
         last_tool_results: list[dict] = []
-        for t in reversed(turns):
+        for t in reversed(current_segment):
             if t.role == "tool":
                 last_tool_results = t.tool_results
                 break
 
-        first_user_msg = next((t.content for t in turns if t.role == "user" and t.content), "") or ""
-        topic = _guess_topic(first_user_msg, system)
-        friend = _guess_friend(first_user_msg, system)
+        latest_user_msg = turns[last_user_idx].content if last_user_idx >= 0 else ""
+        topic = _guess_topic(latest_user_msg or "", system)
+        friend = _guess_friend(latest_user_msg or "", system)
 
         if inbox_mode:
             return self._inbox_step(called, last_tool_results, system)

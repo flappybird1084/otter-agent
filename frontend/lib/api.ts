@@ -37,7 +37,12 @@ export const api = {
   getCalendar: (userId: string) =>
     request<CalendarEvent[]>(`/calendar/${userId}`),
   getEvents: (limit = 60) => request<AgentEvent[]>(`/events?limit=${limit}`),
-  getChat: (userId: string) => request<ChatMessage[]>(`/chat/${userId}`),
+  getChat: (userId: string, conversationId?: string | null) => {
+    const qs = conversationId
+      ? `?conversation_id=${encodeURIComponent(conversationId)}`
+      : "";
+    return request<ChatMessage[]>(`/chat/${userId}${qs}`);
+  },
   postChat: (userId: string, content: string, conversation_id?: string | null) =>
     request<{ reply: unknown; conversation_id: string }>(`/chat`, {
       method: "POST",

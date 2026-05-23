@@ -45,3 +45,24 @@ async def test_maya_to_priya_study_flow():
     assert "agent_message_received" in types
     assert "agent_replied" in types
     assert "event_proposed" in types
+
+
+@pytest.mark.asyncio
+async def test_conversation_memory_across_turns():
+    """Multi-turn within the same conversation should retain history."""
+    from agent.loop import run_agent_turn
+    from db.chat import list_chat_messages_for_conversation, write_chat_message
+
+    conv = "conv_memory_test"
+    # turn 1
+    write_chat_message("user_maya", "user", "What's on my calendar tomorrow?", conv)
+    await run_agent_turn("user_maya", conv, "What's on my calendar tomorrow?", mode="user_chat")
+    # turn 2
+    write_chat_message("user_maya", "user", "Now find me a study time with Priya.", conv)
+    await run_agent_turn("user_maya", conv, "Now find me a study time with Priya.", mode="user_chat")
+
+    history = list_chat_messages_for_conversation("user_maya", conv)
+    user_msgs = [m for m in history if m["role"] == "user"]
+    agent_msgs = [m for m in history if m["role"] == "agent"]
+    assert len(user_msgs) == 2
+    assert len(agent_msgs) == 2, f"expected 2 agent replies, got {len(agent_msgs)}"

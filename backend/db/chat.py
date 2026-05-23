@@ -24,3 +24,12 @@ def list_chat_messages(user_id: str, limit: int = 50) -> list[dict]:
         order_by=("created_at", "asc"),
     )
     return rows[-limit:]
+
+
+def list_chat_messages_for_conversation(user_id: str, conversation_id: str) -> list[dict]:
+    rows = get_store().query(
+        "chat_messages",
+        where=[("user_id", "==", user_id)],
+        order_by=("created_at", "asc"),
+    )
+    return [r for r in rows if r.get("conversation_id") == conversation_id]

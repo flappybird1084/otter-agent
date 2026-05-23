@@ -35,7 +35,7 @@ from db import friendships as friendships_db
 from db import calendar as calendar_db
 from db import notes as notes_db
 from db import inbox as inbox_db
-from db.chat import write_chat_message, list_chat_messages
+from db.chat import write_chat_message, list_chat_messages, list_chat_messages_for_conversation
 from db.events import list_events
 from db.store import new_id
 
@@ -169,7 +169,9 @@ def get_events(limit: int = 50) -> list[dict]:
 
 
 @app.get("/chat/{user_id}")
-def get_chat(user_id: str, limit: int = 50) -> list[dict]:
+def get_chat(user_id: str, limit: int = 50, conversation_id: str | None = None) -> list[dict]:
+    if conversation_id:
+        return list_chat_messages_for_conversation(user_id, conversation_id)
     return list_chat_messages(user_id, limit=limit)
 
 
