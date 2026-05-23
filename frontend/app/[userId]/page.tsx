@@ -7,6 +7,9 @@ import { NotesPanel } from "@/components/NotesPanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { SocialGraph } from "@/components/SocialGraph";
 import { ActivityFeed } from "@/components/ActivityFeed";
+import { CalendarView } from "@/components/CalendarView";
+
+type RightTab = "calendar" | "friends";
 
 const POLL_MS = 800;
 
@@ -17,6 +20,7 @@ export default function UserHome({ params }: { params: { userId: string } }) {
   const [friendships, setFriendships] = useState<Friendship[]>([]);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [demoMode, setDemoMode] = useState(true);
+  const [rightTab, setRightTab] = useState<RightTab>("calendar");
 
   useEffect(() => {
     api.getUser(userId).then(setUser).catch(() => setUser(null));
@@ -55,18 +59,64 @@ export default function UserHome({ params }: { params: { userId: string } }) {
         />
       </section>
       <section className="overflow-hidden flex flex-col">
-        <div className="flex-1 min-h-0 border-b border-zinc-900">
-          <SocialGraph
-            users={allUsers}
-            friendships={friendships}
-            events={events}
-            meId={userId}
-          />
+        <div className="flex border-b border-zinc-900 text-xs">
+          <TabButton
+            active={rightTab === "calendar"}
+            onClick={() => setRightTab("calendar")}
+          >
+            Calendar
+          </TabButton>
+          <TabButton
+            active={rightTab === "friends"}
+            onClick={() => setRightTab("friends")}
+          >
+            Friends
+          </TabButton>
         </div>
-        <div className="h-72 min-h-72 overflow-hidden">
-          <ActivityFeed events={events} users={allUsers} />
+        <div className="flex-1 min-h-0 flex flex-col">
+          {rightTab === "calendar" ? (
+            <CalendarView userId={userId} />
+          ) : (
+            <>
+              <div className="flex-1 min-h-0 border-b border-zinc-900">
+                <SocialGraph
+                  users={allUsers}
+                  friendships={friendships}
+                  events={events}
+                  meId={userId}
+                />
+              </div>
+              <div className="h-72 min-h-72 overflow-hidden">
+                <ActivityFeed events={events} users={allUsers} />
+              </div>
+            </>
+          )}
         </div>
       </section>
     </main>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        "px-4 py-2 border-b-2 transition " +
+        (active
+          ? "border-emerald-500 text-zinc-100"
+          : "border-transparent text-zinc-500 hover:text-zinc-300")
+      }
+    >
+      {children}
+    </button>
   );
 }
