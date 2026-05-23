@@ -344,6 +344,66 @@ TOOL_SCHEMA_DICTS: dict[str, dict] = {
             "required": ["event_id"],
         },
     },
+    "ask_user": {
+        "name": "ask_user",
+        "description": (
+            "Ask the user an open-ended question and wait for their typed reply. "
+            "Use ONLY when you genuinely cannot proceed without their input: an "
+            "ambiguous date ('this Friday or next?'), a missing detail ('which "
+            "midterm?'), or a choice the user must make. The question is delivered "
+            "out-of-band (Telegram), so it works even during agent-to-agent flows. "
+            "Returns {answered: bool, text: string|null, reason: string|null}. "
+            "If answered=false, the user did not respond in time — fall back to a "
+            "sensible default and tell the user what you assumed."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The question, phrased as one short sentence.",
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max seconds to wait. Default 120, max 300.",
+                },
+            },
+            "required": ["question"],
+        },
+    },
+    "confirm_action": {
+        "name": "confirm_action",
+        "description": (
+            "Ask the user to approve or deny a specific action you're about to "
+            "take. Use BEFORE any irreversible or high-stakes operation: sending "
+            "a message to a friend, creating a calendar invite, deleting a note, "
+            "lowering a friend's scope. The user sees an Approve/Deny button on "
+            "Telegram. Returns {answered: bool, approved: bool|null, note: "
+            "string|null, reason: string|null}. If answered=false, treat as "
+            "denied — do NOT take the action, and tell the user you didn't hear "
+            "back. Phrase `summary` as a single sentence describing exactly what "
+            "you'd do (e.g. 'Send Devon: \"Free Wed 3-5pm for studying?\"')."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "One sentence describing the action you want approved.",
+                },
+                "risk_level": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high"],
+                    "description": "How big a deal this is. high = irreversible/data loss.",
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max seconds to wait. Default 120, max 300.",
+                },
+            },
+            "required": ["summary"],
+        },
+    },
 }
 
 
@@ -354,6 +414,7 @@ SELF_TOOLS = [
     "read_calendar", "create_calendar_event", "delete_calendar_event",
     "list_friends", "set_friend_scope",
     "message_friend", "message_friends", "propose_event",
+    "ask_user", "confirm_action",
 ]
 INBOX_TOOLS = [
     "get_current_time",
@@ -362,6 +423,10 @@ INBOX_TOOLS = [
     "read_calendar", "create_calendar_event", "delete_calendar_event",
     "list_friends",
     "reply_to_agent",
+    # ask_user / confirm_action ask the RECEIVER (the human whose agent is
+    # currently running), not the sender — so the receiver stays in the loop
+    # on anything sensitive a friend's agent is trying to do on their behalf.
+    "ask_user", "confirm_action",
     # Deliberately omitted:
     #   message_friend / message_friends — prevents cascading agent loops
     #   set_friend_scope — relationship trust shouldn't be set by a remote agent
@@ -885,6 +950,110 @@ async def execute_tool(
             },
         )
         return {"ok": True, "event_id": event_id}
+
+    if name == "ask_user":
+        from .telegram_bridge import get_bridge
+        from .pending import get_store as _get_pending_store
+
+        question = (args.get("question") or "").strip()
+        if not question:
+            return {"error": "missing_question"}
+        timeout = max(15, min(int(args.get("timeout_seconds") or 120), 300))
+        bridge = get_bridge()
+        req = await bridge.send_ask(actor_user_id, question)
+        if req is None:
+            log_event(
+                type="user_prompt_skipped",
+                actor_user_id=actor_user_id,
+                conversation_id=conversation_id,
+                payload={"summary": _shorten(question, 80), "kind": "ask", "reason": "no_telegram_link"},
+            )
+            return {
+                "answered": False,
+                "text": None,
+                "reason": "no_telegram_link",
+                "message": "User has no Telegram linked. Make a reasonable assumption and surface it in your reply.",
+            }
+        log_event(
+            type="user_prompt_sent",
+            actor_user_id=actor_user_id,
+            conversation_id=conversation_id,
+            payload={"summary": _shorten(question, 80), "kind": "ask", "request_id": req.id},
+        )
+        result = await _get_pending_store().wait(req, timeout=timeout)
+        if not result.answered and result.reason == "timeout":
+            await bridge.send_notice(actor_user_id, "_(Your earlier question timed out — the agent moved on.)_")
+        log_event(
+            type="user_prompt_answered",
+            actor_user_id=actor_user_id,
+            conversation_id=conversation_id,
+            payload={
+                "summary": _shorten(result.text or result.reason or "no answer", 80),
+                "kind": "ask",
+                "request_id": req.id,
+                "answered": result.answered,
+            },
+        )
+        return {
+            "answered": result.answered,
+            "text": result.text,
+            "reason": result.reason,
+        }
+
+    if name == "confirm_action":
+        from .telegram_bridge import get_bridge
+        from .pending import get_store as _get_pending_store
+
+        summary = (args.get("summary") or "").strip()
+        if not summary:
+            return {"error": "missing_summary"}
+        risk = (args.get("risk_level") or "medium").lower()
+        if risk not in ("low", "medium", "high"):
+            risk = "medium"
+        timeout = max(15, min(int(args.get("timeout_seconds") or 120), 300))
+        bridge = get_bridge()
+        req = await bridge.send_confirm(actor_user_id, summary, risk=risk)
+        if req is None:
+            log_event(
+                type="user_prompt_skipped",
+                actor_user_id=actor_user_id,
+                conversation_id=conversation_id,
+                payload={"summary": _shorten(summary, 80), "kind": "confirm", "risk": risk, "reason": "no_telegram_link"},
+            )
+            return {
+                "answered": False,
+                "approved": None,
+                "note": None,
+                "reason": "no_telegram_link",
+                "message": "User has no Telegram linked. Treat this as 'not confirmed' — do not take the action; tell the user you couldn't reach them.",
+            }
+        log_event(
+            type="user_prompt_sent",
+            actor_user_id=actor_user_id,
+            conversation_id=conversation_id,
+            payload={"summary": _shorten(summary, 80), "kind": "confirm", "risk": risk, "request_id": req.id},
+        )
+        result = await _get_pending_store().wait(req, timeout=timeout)
+        if not result.answered and result.reason == "timeout":
+            await bridge.send_notice(actor_user_id, "_(Your earlier confirmation timed out — treated as denied.)_")
+        log_event(
+            type="user_prompt_answered",
+            actor_user_id=actor_user_id,
+            conversation_id=conversation_id,
+            payload={
+                "summary": _shorten(summary, 80),
+                "kind": "confirm",
+                "request_id": req.id,
+                "answered": result.answered,
+                "approved": result.approved,
+            },
+        )
+        return {
+            "answered": result.answered,
+            "approved": result.approved,
+            "note": result.note,
+            "reason": result.reason,
+        }
 
     if name == "delete_calendar_event":
         store = get_store()

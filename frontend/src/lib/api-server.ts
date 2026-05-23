@@ -193,6 +193,16 @@ export const api = {
         : `/direct-chat/${senderUserId}/${recipientUserId}`,
       { method: "DELETE" },
     ),
+
+  telegramLinkCode: (userId: string) =>
+    backend<{ code: string; expires_in_seconds: number }>(`/telegram/link-code`, {
+      method: "POST",
+      body: JSON.stringify({ user_id: userId }),
+    }),
+  telegramStatus: (userId: string) =>
+    backend<{ bridge_enabled: boolean; linked: boolean; chat_id: string | null }>(
+      `/telegram/status/${userId}`,
+    ),
 };
 
 export interface BackendNote {
