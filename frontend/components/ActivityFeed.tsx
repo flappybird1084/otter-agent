@@ -56,6 +56,21 @@ function rowLabel(e: AgentEvent, users: User[]) {
         glyph: `${a} 📅`,
         text: `${aName}'s agent proposed: ${e.payload?.summary || ""}`,
       };
+    case "note_changed":
+      return {
+        glyph: `${a} 📝`,
+        text: `${aName}'s agent: ${e.payload?.summary || "note changed"}`,
+      };
+    case "scope_changed":
+      return {
+        glyph: `${a} 🔒 ${b}`,
+        text: `${aName}'s agent: ${e.payload?.summary || "scope changed"}`,
+      };
+    case "calendar_changed":
+      return {
+        glyph: `${a} 📆`,
+        text: `${aName}'s agent: ${e.payload?.summary || "calendar changed"}`,
+      };
     default:
       return { glyph: a, text: e.type };
   }

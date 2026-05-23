@@ -57,7 +57,8 @@ export function ChatPanel({
 
   async function refresh() {
     if (!conversationId) {
-      setMessages([]);
+      // No conv id yet (first turn in flight). Leave local optimistic state
+      // alone — otherwise the user's just-sent bubble flickers out.
       return;
     }
     try {

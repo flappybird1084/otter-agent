@@ -12,15 +12,45 @@ export function NotesPanel({ userId }: { userId: string }) {
   const [body, setBody] = useState<string>("");
 
   useEffect(() => {
-    api.getNotes(userId).then((ns) => {
-      setNotes(ns);
-      if (ns[0]) setSelected(ns[0].id);
-    });
+    let cancelled = false;
+    async function pull() {
+      try {
+        const ns = await api.getNotes(userId);
+        if (cancelled) return;
+        setNotes(ns);
+        // Keep selection if it's still around; else pick the newest.
+        setSelected((cur) => {
+          if (cur && ns.find((n) => n.id === cur)) return cur;
+          return ns[0]?.id ?? null;
+        });
+      } catch {}
+    }
+    pull();
+    const id = setInterval(pull, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [userId]);
 
   useEffect(() => {
-    if (!selected) return;
-    api.getNote(userId, selected).then((n) => setBody(n.body || ""));
+    if (!selected) {
+      setBody("");
+      return;
+    }
+    let cancelled = false;
+    async function pull() {
+      try {
+        const n = await api.getNote(userId, selected!);
+        if (!cancelled) setBody(n.body || "");
+      } catch {}
+    }
+    pull();
+    const id = setInterval(pull, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
   }, [userId, selected]);
 
   return (

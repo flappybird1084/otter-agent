@@ -58,7 +58,10 @@ export type AgentEvent = {
     | "agent_message_sent"
     | "agent_message_received"
     | "agent_replied"
-    | "event_proposed";
+    | "event_proposed"
+    | "note_changed"
+    | "scope_changed"
+    | "calendar_changed";
   actor_user_id: string;
   target_user_id?: string | null;
   payload: Record<string, unknown> & { summary?: string; rejected?: boolean };

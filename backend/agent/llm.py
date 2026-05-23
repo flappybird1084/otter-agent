@@ -171,10 +171,21 @@ class MockLLM(LLM):
 
         if inbox_mode:
             return self._inbox_step(called, last_tool_results, system)
-        return self._user_step(called, last_tool_results, topic, friend, system)
+        return self._user_step(called, last_tool_results, topic, friend, system, latest_user_msg or "")
 
     # ---- user_chat flow ----
-    def _user_step(self, called, last_results, topic, friend, system) -> LLMResponse:
+    def _user_step(self, called, last_results, topic, friend, system, latest_user_msg: str = "") -> LLMResponse:
+        msg = latest_user_msg.lower()
+
+        # ---- time / date intent ----
+        if any(kw in msg for kw in ("what time", "time is it", "current time", "what day", "what's the date", "todays date", "today's date")):
+            if "get_current_time" not in called:
+                return LLMResponse(text=None, tool_calls=[ToolCall("get_current_time", {})])
+            for r in last_results or []:
+                if r.get("name") == "get_current_time":
+                    human = (r.get("response") or {}).get("human", "")
+                    return LLMResponse(text=f"It's {human}.", tool_calls=[])
+
         if "list_friends" not in called:
             return LLMResponse(text=None, tool_calls=[ToolCall("list_friends", {})])
 
