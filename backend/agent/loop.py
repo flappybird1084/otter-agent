@@ -90,8 +90,29 @@ async def run_agent_turn(
         )
         return reply if isinstance(reply, dict) else {"summary": str(reply), "data": {}}
 
+    nudge_count = 0
     for step in range(MAX_STEPS):
         response: LLMResponse = llm.generate(system=system, turns=turns, tool_names=tool_names)
+
+        # If the model returns absolutely nothing (no text, no tool calls), nudge it
+        # once. Most often this happens in inbox mode after a tool call when the model
+        # forgets to call reply_to_agent. Capped to avoid loops.
+        if (
+            not response.tool_calls
+            and not (response.text or "").strip()
+            and nudge_count < 2
+            and any(t.role == "tool" for t in turns)
+        ):
+            nudge_count += 1
+            nudge = (
+                "You must call reply_to_agent now (this is the only way the sender hears you). "
+                "If you have proposed times, include them in `data.proposed_times` as "
+                "[{start_iso, end_iso}, ...]. If you have nothing useful, still call it with a summary explaining why."
+                if mode == "agent_inbox"
+                else "Continue: either call another tool or produce your final answer now."
+            )
+            turns.append(Turn(role="user", content=nudge))
+            continue
 
         if not response.tool_calls:
             final_text = response.text or "(no reply)"
