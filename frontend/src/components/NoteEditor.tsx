@@ -6,7 +6,24 @@ import TaskItem from "@tiptap/extension-task-item";
 import { useEffect, useRef, useState } from "react";
 import { marked } from "marked";
 import TurndownService from "turndown";
-import type { ActiveNote } from "./AppShell";
+import type { ActiveNote, ShareTier } from "./AppShell";
+
+const SHARE_TIERS: { id: ShareTier; label: string; sub: string; hue: number }[] = [
+  { id: "private", label: "Private", sub: "only you",                hue: 280 },
+  { id: "public",  label: "Public",  sub: "anyone, even strangers",  hue: 200 },
+];
+
+// Display normalization: anything stored as friends/close_friends/family
+// (seed data or legacy notes) is collapsed to "public" in the UI. The user
+// can re-pick private/public to commit a new tier.
+function displayTier(t: ShareTier): "private" | "public" {
+  return t === "private" ? "private" : "public";
+}
+
+function tierMeta(t: ShareTier) {
+  const id = displayTier(t);
+  return SHARE_TIERS.find((s) => s.id === id) ?? SHARE_TIERS[0];
+}
 
 // ─── TipTap custom node: wiki links ──────────────────────────────────────
 // Renders as a clickable [[Title]] chip in the editor; on click navigates
@@ -18,8 +35,16 @@ const WikiLink = Node.create({
   atom: true,
   addAttributes() {
     return {
-      title: { default: "" },
-      slug: { default: "" },
+      title: {
+        default: "",
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-title") ?? "",
+        renderHTML: (attrs) => ({ "data-title": attrs.title as string }),
+      },
+      slug: {
+        default: "",
+        parseHTML: (el) => (el as HTMLElement).getAttribute("data-slug") ?? "",
+        renderHTML: (attrs) => ({ "data-slug": attrs.slug as string }),
+      },
     };
   },
   parseHTML() {
@@ -148,9 +173,21 @@ export default function NoteEditor({
   onSaved: (n: ActiveNote) => void;
 }) {
   const [title, setTitle] = useState(note.title);
+  const [shareTier, setShareTier] = useState<ShareTier>(note.shareTier);
+  const [tierMenuOpen, setTierMenuOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestBody = useRef<string>(note.bodyMd);
+  // True for one tick after onSaved runs, so the parent's note-prop update
+  // (which carries OUR just-saved body) doesn't re-trigger setContent and
+  // clobber any keystrokes the user typed during the save round-trip.
+  const fromSaveRef = useRef(false);
+
+  useEffect(() => {
+    setTitle(note.title);
+    setShareTier(note.shareTier);
+    latestBody.current = note.bodyMd;
+  }, [note.id, note.title, note.shareTier, note.bodyMd]);
 
   const editor = useEditor({
     extensions: [
@@ -168,14 +205,20 @@ export default function NoteEditor({
         const target = event.target as HTMLElement | null;
         if (target && target.closest("[data-wiki-link]")) {
           const el = target.closest("[data-wiki-link]") as HTMLElement;
-          const slug = el.getAttribute("data-slug");
-          const titleAttr = el.getAttribute("data-title");
-          if (slug) {
-            window.location.href = `/?note=${encodeURIComponent(slug)}`;
-            return true;
+          let slug = el.getAttribute("data-slug") || "";
+          let titleAttr = el.getAttribute("data-title") || "";
+          // Recover from data lost on round-trip: fall back to the rendered
+          // [[Title]] text, then derive the missing piece from the other.
+          if (!titleAttr) {
+            const m = (el.textContent || "").match(/^\s*\[\[(.+?)\]\]\s*$/);
+            if (m) titleAttr = m[1];
           }
-          if (titleAttr) {
-            window.location.href = `/?note=${encodeURIComponent(slugify(titleAttr))}`;
+          if (!slug && titleAttr) slug = slugify(titleAttr);
+          if (slug) {
+            const url = titleAttr
+              ? `/?note=${encodeURIComponent(slug)}&title=${encodeURIComponent(titleAttr)}`
+              : `/?note=${encodeURIComponent(slug)}`;
+            window.location.href = url;
             return true;
           }
         }
@@ -195,23 +238,52 @@ export default function NoteEditor({
     };
   }, []);
 
+  // When the parent passes new bodyMd (e.g., agent updated the note via a
+  // tool), sync TipTap's content. Skip if the change came from our own save
+  // — otherwise we'd clobber keystrokes typed during the save round-trip.
+  useEffect(() => {
+    if (!editor) return;
+    if (fromSaveRef.current) {
+      fromSaveRef.current = false;
+      return;
+    }
+    const incoming = mdToHtml(note.bodyMd);
+    if (editor.getHTML() === incoming) return;
+    // `false` for emitUpdate so onUpdate doesn't fire and re-save what we
+    // just pulled in.
+    editor.commands.setContent(incoming, false);
+  }, [editor, note.bodyMd]);
+
   function scheduleSave() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => void save(), 800);
   }
 
-  async function save() {
+  async function save(extra?: Partial<{ shareTier: ShareTier }>) {
     setSaving(true);
     const res = await fetch(`/api/notes/${note.id}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title, bodyMd: latestBody.current }),
+      body: JSON.stringify({
+        title,
+        bodyMd: latestBody.current,
+        shareTier: extra?.shareTier ?? shareTier,
+      }),
     });
     setSaving(false);
     if (res.ok) {
       const j = (await res.json()) as { note: ActiveNote };
+      // Mark before onSaved so the prop-driven useEffect that fires on the
+      // next render sees the flag and skips the setContent refresh.
+      fromSaveRef.current = true;
       onSaved(j.note);
     }
+  }
+
+  async function changeShareTier(next: ShareTier) {
+    setShareTier(next);
+    setTierMenuOpen(false);
+    await save({ shareTier: next });
   }
 
   function onTitleChange(v: string) {
@@ -251,6 +323,83 @@ export default function NoteEditor({
                 <b>due:</b><span className="v">{dueLabel}</span>
               </span>
             )}
+            <span style={{ position: "relative", display: "inline-block" }}>
+              <button
+                type="button"
+                className="fm-chip"
+                onClick={() => setTierMenuOpen((v) => !v)}
+                title="Click to change who can see this note"
+                style={{
+                  cursor: "pointer", background: "transparent",
+                  border: `1px solid oklch(0.55 0.12 ${tierMeta(shareTier).hue} / .55)`,
+                }}
+              >
+                <span
+                  className="dot"
+                  style={{
+                    background: `oklch(0.72 0.16 ${tierMeta(shareTier).hue})`,
+                  }}
+                ></span>
+                <b>share:</b>
+                <span className="v">{tierMeta(shareTier).label.toLowerCase()}</span>
+                <span style={{ color: "var(--fg-faint)", marginLeft: 2, fontSize: 9 }}>▾</span>
+              </button>
+              {tierMenuOpen && (
+                <>
+                  <div
+                    onClick={() => setTierMenuOpen(false)}
+                    style={{
+                      position: "fixed", inset: 0, zIndex: 30,
+                    }}
+                  />
+                  <div
+                    style={{
+                      position: "absolute", top: "calc(100% + 4px)", left: 0,
+                      zIndex: 31, minWidth: 220,
+                      background: "var(--bg-elev)", border: "1px solid var(--border)",
+                      borderRadius: 8, boxShadow: "0 8px 20px rgba(0,0,0,.4)",
+                      padding: 4, display: "flex", flexDirection: "column", gap: 2,
+                    }}
+                  >
+                    {SHARE_TIERS.map((s) => {
+                      const active = s.id === displayTier(shareTier);
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => void changeShareTier(s.id)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 8,
+                            padding: "6px 8px", borderRadius: 6, cursor: "pointer",
+                            background: active ? "var(--bg)" : "transparent",
+                            border: active
+                              ? `1px solid oklch(0.55 0.12 ${s.hue} / .6)`
+                              : "1px solid transparent",
+                            textAlign: "left",
+                          }}
+                        >
+                          <span style={{
+                            width: 8, height: 8, borderRadius: "50%",
+                            background: `oklch(0.72 0.16 ${s.hue})`,
+                          }} />
+                          <span style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+                            <span style={{ color: "var(--fg)", fontSize: 12, fontWeight: 600 }}>
+                              {s.label}
+                            </span>
+                            <span style={{ color: "var(--fg-faint)", fontSize: 10 }}>
+                              {s.sub}
+                            </span>
+                          </span>
+                          {active && (
+                            <span style={{ color: "var(--accent)", fontSize: 11 }}>✓</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </span>
           </div>
           <input
             className="note-title"

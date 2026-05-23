@@ -11,6 +11,9 @@ interface AgentMsg {
   payloadSent: unknown;
   payloadDelivered: unknown;
   reply?: unknown;
+  rejected?: boolean;
+  reason?: string;
+  summary?: string;
 }
 interface Friend {
   id: string;
@@ -38,6 +41,9 @@ type StreamEvent =
       payloadSent: unknown;
       payloadDelivered: unknown;
       reply?: unknown;
+      rejected?: boolean;
+      reason?: string;
+      summary?: string;
     }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -83,13 +89,19 @@ export default function ChatPanel({
   const [busy, setBusy] = useState(false);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [me, setMe] = useState<{ id: string; displayName: string } | null>(null);
+  // Per-message expansion state for the tool / a2a strip. Keyed by
+  // `${target}:${index}` so the same index in different threads doesn't
+  // collide. Default state is collapsed; the live (currently-streaming)
+  // message always renders expanded regardless.
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  const messages = threads[target] || [];
+  const expandKey = (i: number) => `${target}:${i}`;
+  const isExpanded = (i: number) => expanded[expandKey(i)] === true;
+  const toggleExpanded = (i: number) =>
+    setExpanded((cur) => ({ ...cur, [expandKey(i)]: !cur[expandKey(i)] }));
 
-  function setMessages(updater: (cur: Message[]) => Message[]) {
-    setThreads((all) => ({ ...all, [target]: updater(all[target] || []) }));
-  }
+  const messages = threads[target] || [];
 
   const names = useMemo(() => {
     const out: Record<string, string> = {};
@@ -160,11 +172,19 @@ export default function ChatPanel({
     setInput("");
     setBusy(true);
     const targetFriendId = target === "self" ? undefined : target;
-    setMessages((m) => [
-      ...m,
-      { role: "user", content: msg, targetFriendId },
-      { role: "assistant", content: "", tools: [], agentMsgs: [], targetFriendId },
-    ]);
+    // Pin the target this turn writes to. If the user switches chats mid-
+    // stream the reply still lands on the originating thread.
+    const sendTarget = target;
+    setThreads((all) => ({
+      ...all,
+      [sendTarget]: [
+        ...(all[sendTarget] || []),
+        { role: "user", content: msg, targetFriendId },
+        { role: "assistant", content: "", tools: [], agentMsgs: [], targetFriendId },
+      ],
+    }));
+    const patchSendTarget = (updater: (cur: Message[]) => Message[]) =>
+      setThreads((all) => ({ ...all, [sendTarget]: updater(all[sendTarget] || []) }));
 
     try {
       const res = await fetch("/api/chat", {
@@ -173,7 +193,7 @@ export default function ChatPanel({
         body: JSON.stringify({ message: msg, friendId: targetFriendId }),
       });
       if (!res.ok || !res.body) {
-        setMessages((m) => {
+        patchSendTarget((m) => {
           const copy = [...m];
           copy[copy.length - 1] = { role: "assistant", content: "[error]" };
           return copy;
@@ -196,7 +216,7 @@ export default function ChatPanel({
           if (!line) continue;
           try {
             const data = JSON.parse(line.slice(6)) as StreamEvent;
-            setMessages((m) => {
+            patchSendTarget((m) => {
               const copy = [...m];
               const last = copy[copy.length - 1];
               if (!last || last.role !== "assistant") return copy;
@@ -209,6 +229,18 @@ export default function ChatPanel({
                   data.name === "propose_event"
                 ) {
                   window.dispatchEvent(new CustomEvent("confluent:calendar-changed"));
+                }
+                if (
+                  data.name === "create_note" ||
+                  data.name === "update_note" ||
+                  data.name === "delete_note" ||
+                  data.name === "set_friend_scope"
+                ) {
+                  // Includes set_friend_scope so the sidebar friend rows /
+                  // social rings reflect the new scope without a reload.
+                  window.dispatchEvent(new CustomEvent("confluent:notes-changed", {
+                    detail: { tool: data.name, input: data.input },
+                  }));
                 }
                 copy[copy.length - 1] = {
                   ...last,
@@ -232,6 +264,9 @@ export default function ChatPanel({
                   payloadSent: data.payloadSent,
                   payloadDelivered: data.payloadDelivered,
                   reply: data.reply,
+                  rejected: data.rejected,
+                  reason: data.reason,
+                  summary: data.summary,
                 };
                 if (i >= 0 && data.reply !== undefined) a2a[i] = entry;
                 else a2a.push(entry);
@@ -245,6 +280,38 @@ export default function ChatPanel({
             // ignore malformed
           }
         }
+      }
+      // Stream ended — reconcile against server history so the final agent
+      // text is guaranteed to render even if the SSE text event slipped past
+      // the parser. Preserves the streamed tools/agentMsgs UI.
+      try {
+        const histRes = await fetch(
+          `/api/chat?target=${encodeURIComponent(sendTarget)}`,
+        );
+        if (histRes.ok) {
+          const j = (await histRes.json()) as {
+            messages: Array<{ id: string; role: "user" | "assistant"; content: string }>;
+          };
+          const lastServerAssistant = [...j.messages]
+            .reverse()
+            .find((m) => m.role === "assistant");
+          if (lastServerAssistant?.content) {
+            patchSendTarget((cur) => {
+              const out = [...cur];
+              for (let i = out.length - 1; i >= 0; i--) {
+                if (out[i].role === "assistant") {
+                  if (!out[i].content || out[i].content !== lastServerAssistant.content) {
+                    out[i] = { ...out[i], content: lastServerAssistant.content };
+                  }
+                  break;
+                }
+              }
+              return out;
+            });
+          }
+        }
+      } catch {
+        // ignore — at worst the user sees the streamed state
       }
     } finally {
       setBusy(false);
@@ -323,7 +390,18 @@ export default function ChatPanel({
             )}
           </div>
         )}
-        {messages.map((m, i) => (
+        {messages.map((m, i) => {
+          const isLive = m.role === "assistant" && i === messages.length - 1 && busy;
+          const hasTools = (m.tools?.length ?? 0) > 0;
+          const hasA2a = (m.agentMsgs?.length ?? 0) > 0;
+          const hasDetail = hasTools || hasA2a;
+          // While streaming, always show the detail (so the user watches
+          // progress). Once done, collapse it under a disclosure unless the
+          // user has explicitly expanded it.
+          const showDetail = isLive || isExpanded(i);
+          const toolCount = m.tools?.length ?? 0;
+          const a2aCount = m.agentMsgs?.length ?? 0;
+          return (
           <div key={i} className={`msg ${m.role}`}>
             <div className="msg-meta">
               <span className="who">
@@ -340,9 +418,52 @@ export default function ChatPanel({
               <div className="msg-bubble">{m.content}</div>
             )}
 
-            {m.tools && m.tools.length > 0 && (
+            {hasDetail && !showDetail && (
+              <button
+                type="button"
+                onClick={() => toggleExpanded(i)}
+                title="Show what the agent did"
+                style={{
+                  marginTop: 4, alignSelf: "flex-start",
+                  background: "transparent", border: "1px solid var(--border-soft)",
+                  borderRadius: 4, padding: "2px 8px",
+                  color: "var(--fg-faint)", fontSize: 10,
+                  fontFamily: "var(--font-mono)", cursor: "pointer",
+                  display: "inline-flex", gap: 6, alignItems: "center",
+                }}
+              >
+                <span>▸</span>
+                <span>
+                  {[
+                    toolCount > 0 && `${toolCount} tool${toolCount === 1 ? "" : "s"}`,
+                    a2aCount > 0 && `${a2aCount} agent msg${a2aCount === 1 ? "" : "s"}`,
+                  ].filter(Boolean).join(" · ")}
+                </span>
+              </button>
+            )}
+
+            {hasDetail && showDetail && !isLive && (
+              <button
+                type="button"
+                onClick={() => toggleExpanded(i)}
+                title="Hide what the agent did"
+                style={{
+                  marginTop: 4, alignSelf: "flex-start",
+                  background: "transparent", border: "1px solid var(--border-soft)",
+                  borderRadius: 4, padding: "2px 8px",
+                  color: "var(--fg-faint)", fontSize: 10,
+                  fontFamily: "var(--font-mono)", cursor: "pointer",
+                  display: "inline-flex", gap: 6, alignItems: "center",
+                }}
+              >
+                <span>▾</span>
+                <span>hide details</span>
+              </button>
+            )}
+
+            {showDetail && hasTools && (
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
-                {m.tools.map((t, j) => (
+                {m.tools!.map((t, j) => (
                   <div key={j} className={`tool-chip ${t.output !== undefined ? "done" : ""}`}>
                     <span className="dot"></span>
                     <span>{t.name}</span>
@@ -352,27 +473,43 @@ export default function ChatPanel({
               </div>
             )}
 
-            {m.agentMsgs && m.agentMsgs.length > 0 && (
+            {showDetail && hasA2a && (
               <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6 }}>
-                {m.agentMsgs.map((a, j) => {
+                {m.agentMsgs!.map((a, j) => {
                   const inFlight = a.reply === undefined;
                   const rText = replyText(a.reply);
+                  const denied = Boolean(a.rejected);
                   return (
-                    <div key={j} className={`a2a-strip ${inFlight ? "in-flight" : "done"}`}>
+                    <div
+                      key={j}
+                      className={`a2a-strip ${inFlight ? "in-flight" : "done"}${denied ? " denied" : ""}`}
+                      style={denied ? {
+                        background: "oklch(0.30 0.10 25 / 0.18)",
+                        border: "1px solid oklch(0.55 0.16 25 / 0.55)",
+                        borderRadius: 6,
+                        padding: "4px 6px",
+                      } : undefined}
+                    >
                       <div className="a2a-avatar from" title={`${nameOr(names, a.fromUserId)}'s agent`}>
                         {initials(nameOr(names, a.fromUserId))}
                       </div>
                       <div className="a2a-wire">
-                        <div className="a2a-wire-track" />
+                        <div className="a2a-wire-track" style={denied ? { background: "oklch(0.55 0.16 25 / 0.7)" } : undefined} />
                         {inFlight && <div className="a2a-packet forward" />}
-                        {!inFlight && <div className="a2a-packet reverse" />}
-                        <div className="a2a-intent-label">{intentLabel(a.intent)}</div>
+                        {!denied && !inFlight && <div className="a2a-packet reverse" />}
+                        <div className="a2a-intent-label" style={denied ? { color: "oklch(0.80 0.16 25)", fontWeight: 600 } : undefined}>
+                          {denied ? `⛔ blocked (${a.reason || "denied"})` : intentLabel(a.intent)}
+                        </div>
                       </div>
                       <div className="a2a-avatar to" title={`${nameOr(names, a.toUserId)}'s agent`}>
                         {initials(nameOr(names, a.toUserId))}
                       </div>
                       {!inFlight && rText && (
-                        <div className="a2a-strip-reply" title={typeof a.reply === "object" ? JSON.stringify(a.reply) : ""}>
+                        <div
+                          className="a2a-strip-reply"
+                          style={denied ? { color: "oklch(0.85 0.14 25)" } : undefined}
+                          title={typeof a.reply === "object" ? JSON.stringify(a.reply) : ""}
+                        >
                           {rText}
                         </div>
                       )}
@@ -382,7 +519,8 @@ export default function ChatPanel({
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
       <div className="composer">
         <div className="composer-box">

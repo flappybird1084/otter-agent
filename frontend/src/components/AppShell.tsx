@@ -17,6 +17,8 @@ const RIGHT_MAX = 600;
 
 export type View = "brain" | "calendar" | "social" | "graph";
 
+export type ShareTier = "private" | "public" | "friends" | "close_friends" | "family";
+
 export interface NoteSummary {
   id: string;
   title: string;
@@ -26,6 +28,7 @@ export interface NoteSummary {
   dueAt: string | null;
   updatedAt: string;
   sortIndex?: number;
+  shareTier: ShareTier;
 }
 
 export interface ActiveNote {
@@ -36,6 +39,7 @@ export interface ActiveNote {
   kind: string;
   status: string | null;
   dueAt: string | null;
+  shareTier: ShareTier;
 }
 
 export interface AppUser {
@@ -154,6 +158,7 @@ export default function AppShell({
       {
         id: j.note.id, title: j.note.title, slug: j.note.slug, kind: j.note.kind,
         status: j.note.status, dueAt: j.note.dueAt, updatedAt: j.note.updatedAt,
+        shareTier: j.note.shareTier,
       },
       ...cur,
     ]);
@@ -204,11 +209,47 @@ export default function AppShell({
     setAllNotes((cur) =>
       cur.map((n) =>
         n.id === updated.id
-          ? { ...n, title: updated.title, kind: updated.kind, status: updated.status, dueAt: updated.dueAt, updatedAt: new Date().toISOString() }
+          ? {
+              ...n,
+              title: updated.title,
+              kind: updated.kind,
+              status: updated.status,
+              dueAt: updated.dueAt,
+              shareTier: updated.shareTier,
+              updatedAt: new Date().toISOString(),
+            }
           : n,
       ),
     );
   }
+
+  // Refetch notes (and the open note's body) whenever the agent mutates
+  // anything note-shaped via its tools. ChatPanel dispatches the event.
+  useEffect(() => {
+    const handler = async () => {
+      try {
+        const r = await fetch("/api/notes");
+        if (r.ok) {
+          const j = (await r.json()) as { notes: NoteSummary[] };
+          setAllNotes(j.notes);
+        }
+      } catch { /* noop */ }
+      const activeId = active?.id;
+      if (activeId) {
+        try {
+          const r2 = await fetch(`/api/notes/${activeId}`);
+          if (r2.ok) {
+            const j2 = (await r2.json()) as { note: ActiveNote };
+            setActive(j2.note);
+          } else if (r2.status === 404) {
+            setActive(null);
+          }
+        } catch { /* noop */ }
+      }
+    };
+    window.addEventListener("confluent:notes-changed", handler);
+    return () => window.removeEventListener("confluent:notes-changed", handler);
+  }, [active?.id]);
 
   // ⌘K / Ctrl-K opens search
   useEffect(() => {
