@@ -103,7 +103,24 @@ async def run_agent_turn(
                     conversation_id=conversation_id,
                     payload={"summary": _shorten(final_text, 120)},
                 )
-            return final_text
+                return final_text
+            # agent_inbox mode: the model bailed without calling reply_to_agent.
+            # Wrap its loose text into a proper reply so the sender sees something
+            # useful instead of "(no reply)".
+            if inbox_msg:
+                inbox_db.update_inbox_message(inbox_msg["id"], {
+                    "status": "complete",
+                    "reply": final_text,
+                    "reply_data": {},
+                })
+            log_event(
+                type="agent_replied",
+                actor_user_id=user_id,
+                target_user_id=(inbox_msg or {}).get("sender_user_id"),
+                conversation_id=conversation_id,
+                payload={"summary": _shorten(final_text, 120), "wrapped_from_text": True},
+            )
+            return {"summary": final_text, "reply_data": {}}
 
         tool_results = []
         for call in response.tool_calls:
