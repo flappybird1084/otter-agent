@@ -365,4 +365,118 @@ def get_llm() -> LLM:
     backend = os.environ.get("LLM_BACKEND", "mock").lower()
     if backend == "vertex":
         return VertexLLM()
+    if backend in ("google_ai", "google", "aistudio", "googleai"):
+        return GoogleAILLM()
     return MockLLM()
+
+
+# ---------------------------------------------------------------------------
+# Google AI Studio (direct HTTP — no gcloud, no Vertex setup)
+# ---------------------------------------------------------------------------
+
+
+class GoogleAILLM(LLM):
+    """Calls the Gemini REST API at generativelanguage.googleapis.com.
+
+    Auth is a `GOOGLE_API_KEY` from https://aistudio.google.com/apikey — no
+    GCP project, ADC, or service account needed. Function-calling spec matches
+    Vertex's, so the same tool dispatcher works untouched.
+    """
+
+    def __init__(self, model_name: str | None = None) -> None:
+        self._model_name = model_name or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        self._api_key = os.environ.get("GOOGLE_API_KEY", "").strip()
+        if not self._api_key:
+            raise RuntimeError("GOOGLE_API_KEY is unset. Get one at https://aistudio.google.com/apikey")
+
+    def generate(self, *, system: str, turns: list[Turn], tool_names: list[str]) -> LLMResponse:
+        import httpx
+        from .tools import TOOL_SCHEMA_DICTS
+
+        declarations = []
+        for n in tool_names:
+            spec = TOOL_SCHEMA_DICTS.get(n)
+            if not spec:
+                continue
+            declarations.append({
+                "name": spec["name"],
+                "description": spec["description"],
+                # Gemini's JSON-schema dialect is a strict subset of OpenAPI; our
+                # schemas only use the supported keys so we can pass through.
+                "parameters": _clean_schema_for_gemini(spec["parameters"]),
+            })
+
+        contents = []
+        for t in turns:
+            if t.role == "user" and t.content is not None:
+                contents.append({"role": "user", "parts": [{"text": t.content}]})
+            elif t.role == "model":
+                parts: list[dict] = []
+                if t.content:
+                    parts.append({"text": t.content})
+                for tc in t.tool_calls:
+                    parts.append({"functionCall": {"name": tc.name, "args": tc.args or {}}})
+                if parts:
+                    contents.append({"role": "model", "parts": parts})
+            elif t.role == "tool":
+                parts = []
+                for res in t.tool_results:
+                    parts.append({
+                        "functionResponse": {
+                            "name": res["name"],
+                            "response": {"content": res["response"]},
+                        },
+                    })
+                if parts:
+                    # Gemini wants function responses under the "user" role.
+                    contents.append({"role": "user", "parts": parts})
+
+        body: dict = {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": contents,
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8192},
+        }
+        if declarations:
+            body["tools"] = [{"functionDeclarations": declarations}]
+
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self._model_name}:generateContent?key={self._api_key}"
+        )
+        r = httpx.post(url, json=body, timeout=60)
+        if r.status_code != 200:
+            raise RuntimeError(f"Gemini API {r.status_code}: {r.text[:400]}")
+        data = r.json()
+
+        text: str | None = None
+        tool_calls: list[ToolCall] = []
+        for cand in data.get("candidates", []) or []:
+            for part in (cand.get("content", {}) or {}).get("parts", []) or []:
+                fc = part.get("functionCall")
+                if fc and fc.get("name"):
+                    tool_calls.append(ToolCall(name=fc["name"], args=dict(fc.get("args") or {})))
+                elif part.get("text"):
+                    text = (text or "") + part["text"]
+
+        if not text and not tool_calls:
+            finish = (data.get("candidates") or [{}])[0].get("finishReason")
+            print(f"[GoogleAILLM] EMPTY response — finishReason={finish}, model={self._model_name}", flush=True)
+        return LLMResponse(text=text, tool_calls=tool_calls)
+
+
+def _clean_schema_for_gemini(schema: dict) -> dict:
+    """Strip JSON-schema keys Gemini rejects (e.g. `additionalProperties`,
+    `$schema`) and recursively clean nested object/array shapes."""
+    if not isinstance(schema, dict):
+        return schema
+    out: dict = {}
+    for k, v in schema.items():
+        if k in ("additionalProperties", "$schema", "title"):
+            continue
+        if k == "properties" and isinstance(v, dict):
+            out[k] = {pk: _clean_schema_for_gemini(pv) for pk, pv in v.items()}
+        elif k == "items":
+            out[k] = _clean_schema_for_gemini(v)
+        else:
+            out[k] = v
+    return out

@@ -23,6 +23,11 @@ from .tools import SELF_TOOLS, INBOX_TOOLS, execute_tool
 
 MAX_STEPS = 8
 
+# Hard cap on conversation history seeded into the model. Each "turn pair"
+# is one user message + one agent reply. 20 pairs keeps multi-turn context
+# (~last hour of chat) without ballooning the prompt forever.
+HISTORY_TURN_PAIRS = 20
+
 
 async def run_agent_turn(
     user_id: str,
@@ -66,6 +71,10 @@ async def run_agent_turn(
     if mode == "user_chat":
         # Seed with prior conversation so the agent has memory across turns.
         history = list_chat_messages_for_conversation(user_id, conversation_id)
+        # Keep only the most recent ~HISTORY_TURN_PAIRS round-trips so very long
+        # threads stay within budget. Slice on raw messages, not pairs, since
+        # role ordering may not be strictly alternating after errors.
+        history = history[-(HISTORY_TURN_PAIRS * 2):]
         for m in history:
             if m["role"] == "user":
                 turns.append(Turn(role="user", content=m["content"]))
@@ -100,23 +109,32 @@ async def run_agent_turn(
             llm.generate, system=system, turns=turns, tool_names=tool_names
         )
 
-        # If the model returns absolutely nothing (no text, no tool calls), nudge it
-        # once. Most often this happens in inbox mode after a tool call when the model
-        # forgets to call reply_to_agent. Capped to avoid loops.
+        # If the model returns absolutely nothing (no text, no tool calls), nudge
+        # and retry. Gemini does this occasionally — sometimes on the very first
+        # call (empty initial output), sometimes after a tool call when it forgets
+        # reply_to_agent. Cap at 2 nudges per turn so we don't loop forever.
         if (
             not response.tool_calls
             and not (response.text or "").strip()
             and nudge_count < 2
-            and any(t.role == "tool" for t in turns)
         ):
             nudge_count += 1
-            nudge = (
-                "You must call reply_to_agent now (this is the only way the sender hears you). "
-                "If you have proposed times, include them in `data.proposed_times` as "
-                "[{start_iso, end_iso}, ...]. If you have nothing useful, still call it with a summary explaining why."
-                if mode == "agent_inbox"
-                else "Continue: either call another tool or produce your final answer now."
-            )
+            had_tool_results = any(t.role == "tool" for t in turns)
+            if mode == "agent_inbox":
+                nudge = (
+                    "You must call reply_to_agent now (this is the only way the sender hears you). "
+                    "If you have proposed times, include them in `data.proposed_times` as "
+                    "[{start_iso, end_iso}, ...]. If you have nothing useful, still call it with a summary explaining why."
+                )
+            elif had_tool_results:
+                nudge = "Continue: either call another tool or produce your final answer now."
+            else:
+                # First call came back empty before we got anywhere — push the
+                # model to actually start using tools / answering.
+                nudge = (
+                    "You returned no text and no tool calls. Try again: either call a tool to "
+                    "gather what you need, or write a direct answer to the user's question."
+                )
             turns.append(Turn(role="user", content=nudge))
             continue
 
