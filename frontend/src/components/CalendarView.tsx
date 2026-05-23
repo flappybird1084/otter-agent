@@ -50,6 +50,8 @@ export default function CalendarView() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<CalEvent | null>(null);
 
+  const [refreshTick, setRefreshTick] = useState(0);
+
   useEffect(() => {
     const from = weekStart.toISOString();
     const to = addDays(weekStart, 7).toISOString();
@@ -58,7 +60,14 @@ export default function CalendarView() {
       .then((r) => (r.ok ? r.json() : { events: [] }))
       .then((j: { events: CalEvent[] }) => setEvents(j.events))
       .finally(() => setLoading(false));
-  }, [weekStart]);
+  }, [weekStart, refreshTick]);
+
+  // Refetch whenever the agent reports a calendar mutation in any chat turn.
+  useEffect(() => {
+    const handler = () => setRefreshTick((n) => n + 1);
+    window.addEventListener("confluent:calendar-changed", handler);
+    return () => window.removeEventListener("confluent:calendar-changed", handler);
+  }, []);
 
   useEffect(() => {
     if (!selected) return;

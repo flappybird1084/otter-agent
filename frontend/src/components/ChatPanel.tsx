@@ -203,6 +203,13 @@ export default function ChatPanel({
               if (data.type === "text") {
                 copy[copy.length - 1] = { ...last, content: last.content + data.delta };
               } else if (data.type === "tool_use") {
+                if (
+                  data.name === "create_calendar_event" ||
+                  data.name === "delete_calendar_event" ||
+                  data.name === "propose_event"
+                ) {
+                  window.dispatchEvent(new CustomEvent("confluent:calendar-changed"));
+                }
                 copy[copy.length - 1] = {
                   ...last,
                   tools: [...(last.tools ?? []), { name: data.name }],

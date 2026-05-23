@@ -23,12 +23,10 @@ const SCOPE_LABEL: Record<string, string> = {
   family: "family",
 };
 
-function effectiveScope(mine: string, theirs: string): string {
-  // The lower of the two — whichever direction is tighter governs what data
-  // actually flows in either direction.
-  const a = SCOPE_RANK[mine] ?? 0;
-  const b = SCOPE_RANK[theirs] ?? 0;
-  return a <= b ? mine : theirs;
+function effectiveScope(_mine: string, theirs: string): string {
+  // The effective scope for what YOU see about this friend is whatever THEY
+  // have you set as — their scope of you gates what their agent shares back.
+  return theirs;
 }
 
 const GROUPS: { id: string; label: string; kinds: string[] }[] = [
@@ -530,6 +528,9 @@ function FriendChatRow({
             <span style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
               {SCOPE_LABEL[eff] ?? eff}
             </span>
+          </div>
+          <div style={{ marginTop: 4, fontSize: 10, color: "var(--fg-faint)", fontStyle: "italic" }}>
+            (matches what they share with you)
           </div>
         </div>
       )}
