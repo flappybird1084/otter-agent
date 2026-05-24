@@ -16,8 +16,23 @@ An agent social network. Your personal AI talks to your friends' agents — with
 ## What's in here
 
 - `backend/` — FastAPI + Vertex AI Gemini + Firestore (with a local JSON fallback so it runs offline)
-- `frontend/` — Next.js 14 + Tailwind + React Flow social graph
+- `frontend/` — Next.js 14 + Tailwind + React Flow social graph + TipTap markdown editor
 - `backend/seed/` — demo dataset (3 users, friendships, calendars, notes)
+
+## Integrations
+
+- **Telegram bridge** — pair your account with a Telegram bot (`/link CODE`).
+  Free text reaches your agent the same way as the web chat panel; agent-side
+  `ask_user` / `confirm_action` tools push out-of-band prompts (and an
+  Approve/Deny button) so the agent can stay in the loop with you while it
+  works — even mid agent-to-agent flow.
+- **ActionLayer MCP** — agent can delegate real-world goals through the
+  ActionLayer Model Context Protocol server, so tasks that need a third-party
+  action (booking, ordering, web automation) get handed off cleanly instead of
+  being faked.
+- **Vertex AI Gemini** function-calling for the agent loop; Firestore +
+  Cloud Storage for persistence; a local JSON store + mock LLM for the
+  zero-credential demo path.
 
 ## Demo: 30 seconds to first sparkle
 
@@ -107,7 +122,8 @@ Scope is checked **from the recipient's perspective** — Maya can ask Priya for
 
 ## What's intentionally missing
 
-OAuth, real Google Calendar, mobile, streaming, group chat across 3+ agents, MCP. See section 13 of the design doc.
+OAuth, real Google Calendar, mobile, streaming, group chat across 3+ agents.
+See section 13 of the design doc.
 
 ## Smoke test
 
