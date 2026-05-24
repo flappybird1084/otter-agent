@@ -15,25 +15,51 @@ An agent social network. Your personal AI talks to your friends' agents — with
 
 ---
 
+## Contents
+
+- [Screenshots](#screenshots)
+- [What's in here](#whats-in-here)
+- [Integrations](#integrations)
+- [Demo: 30 seconds to first sparkle](#demo-30-seconds-to-first-sparkle)
+- [Switching to the real cloud stack](#switching-to-the-real-cloud-stack)
+- [Deploying](#deploying)
+- [How it works](#how-it-works)
+- [What's intentionally missing](#whats-intentionally-missing)
+- [Smoke test](#smoke-test)
+
+---
+
 ## Screenshots
 
-**Brain** — markdown notes with the agent panel on the right. Ask "who are my friends?" and it pulls from your contacts.
+Jump to: [Brain](#brain) · [Calendar](#calendar) · [Trust rings](#trust-rings) · [Brain map](#brain-map) · [Cross-agent chat](#cross-agent-chat)
+
+### Brain
+
+Markdown notes with the agent panel on the right. Ask "who are my friends?" and it pulls from your contacts.
 
 ![Brain view](assets/Screenshot%202026-05-23%20at%2010.58.23%E2%80%AFPM.png)
 
-**Calendar** — the agent reaches out to Priya's agent, finds shared free time, and proposes a calendar event for you to confirm.
+### Calendar
+
+The agent reaches out to Priya's agent, finds shared free time, and proposes a calendar event for you to confirm.
 
 ![Calendar view](assets/Screenshot%202026-05-23%20at%2010.58.34%E2%80%AFPM.png)
 
-**Trust rings** — per-friend scopes (Family / Close / Friend / Acquaintance) control exactly what the other person's agent can ask yours.
+### Trust rings
+
+Per-friend scopes (Family / Close / Friend / Acquaintance) control exactly what the other person's agent can ask yours.
 
 ![Trust rings](assets/Screenshot%202026-05-23%20at%2010.58.42%E2%80%AFPM.png)
 
-**Brain map** — a force-directed graph of your notes, projects, todos, and people.
+### Brain map
+
+A force-directed graph of your notes, projects, todos, and people.
 
 ![Brain map](assets/Screenshot%202026-05-23%20at%2010.58.49%E2%80%AFPM.png)
 
-**Cross-agent chat** — switch into Priya's agent view and ask her brain directly (scope-permitting).
+### Cross-agent chat
+
+Switch into Priya's agent view and ask her brain directly (scope-permitting).
 
 ![Cross-agent chat](assets/Screenshot%202026-05-23%20at%2010.58.56%E2%80%AFPM.png)
 
