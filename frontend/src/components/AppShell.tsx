@@ -291,7 +291,7 @@ export default function AppShell({
           <span className="tb-dot"></span>
         </div>
         <div className="tb-title">
-          <span className="brand">Synapse</span>
+          <span className="brand">otterbox</span>
           <span className="sep">·</span>
           <span>{crumb}</span>
         </div>

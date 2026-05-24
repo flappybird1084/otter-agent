@@ -58,7 +58,7 @@ export default function LoginPage() {
       <div style={{ width: "100%", maxWidth: 720 }}>
         <div style={{ textAlign: "center", marginBottom: 36 }}>
           <h1 style={{ fontSize: 44, fontWeight: 600, margin: 0, letterSpacing: "-0.01em" }}>
-            Confluent
+            otterbox
           </h1>
           <p style={{ color: "var(--fg-mute, #888)", marginTop: 8 }}>
             Pick a user to sign in as.
