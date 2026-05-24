@@ -15,6 +15,30 @@ An agent social network. Your personal AI talks to your friends' agents — with
 
 ---
 
+## Screenshots
+
+**Brain** — markdown notes with the agent panel on the right. Ask "who are my friends?" and it pulls from your contacts.
+
+![Brain view](assets/Screenshot%202026-05-23%20at%2010.58.23%E2%80%AFPM.png)
+
+**Calendar** — the agent reaches out to Priya's agent, finds shared free time, and proposes a calendar event for you to confirm.
+
+![Calendar view](assets/Screenshot%202026-05-23%20at%2010.58.34%E2%80%AFPM.png)
+
+**Trust rings** — per-friend scopes (Family / Close / Friend / Acquaintance) control exactly what the other person's agent can ask yours.
+
+![Trust rings](assets/Screenshot%202026-05-23%20at%2010.58.42%E2%80%AFPM.png)
+
+**Brain map** — a force-directed graph of your notes, projects, todos, and people.
+
+![Brain map](assets/Screenshot%202026-05-23%20at%2010.58.49%E2%80%AFPM.png)
+
+**Cross-agent chat** — switch into Priya's agent view and ask her brain directly (scope-permitting).
+
+![Cross-agent chat](assets/Screenshot%202026-05-23%20at%2010.58.56%E2%80%AFPM.png)
+
+---
+
 ## What's in here
 
 - `backend/` — FastAPI + Vertex AI Gemini + Firestore (with a local JSON fallback so it runs offline)
