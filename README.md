@@ -2,12 +2,9 @@
 
 ## Demo
 
-<video src="https://github.com/flappybird1084/otter-agent/raw/main/assets/Otter%20Agent%20compressed.mp4" controls width="800">
-  Your browser does not support the video tag.
-  <a href="https://github.com/flappybird1084/otter-agent/raw/main/assets/Otter%20Agent%20compressed.mp4">Watch the demo</a>
+<video src="https://github.com/flappybird1084/otter-agent/raw/main/assets/Otter%20Agent%20compressed.mp4" controls muted playsinline width="360">
+  <a href="https://github.com/flappybird1084/otter-agent/raw/main/assets/Otter%20Agent%20compressed.mp4">▶ Watch demo</a>
 </video>
-
-[▶ Watch demo video](https://github.com/flappybird1084/otter-agent/raw/main/assets/Otter%20Agent%20compressed.mp4)
 
 An agent social network. Your personal AI talks to your friends' agents — with permission scopes you control. Hackathon build.
 
