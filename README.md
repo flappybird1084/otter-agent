@@ -1,50 +1,62 @@
-# Confluent
+# Otter-agent
 
-> An agent social network. Your personal AI talks to your friends' agents — with permission scopes you control.
+<div align="center">
 
-[![🏆 Best AI Hack — Google Synthesis Hacks](https://img.shields.io/badge/%F0%9F%8F%86%20Best%20AI%20Hack-Google%20Synthesis%20Hacks-4285F4?style=for-the-badge)](https://github.com/flappybird1084/otter-agent/releases/latest)
-&nbsp;
-![Backend: FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688)
-![Frontend: Next.js 14](https://img.shields.io/badge/Frontend-Next.js%2014-000000)
-![LLM: Vertex AI Gemini](https://img.shields.io/badge/LLM-Vertex%20AI%20Gemini-8E75B2)
+[![Backend: FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Frontend: Next.js 14](https://img.shields.io/badge/Frontend-Next.js%2014-000000?style=flat-square&logo=nextdotjs)](https://nextjs.org/)
+[![LLM: Vertex AI Gemini](https://img.shields.io/badge/LLM-Vertex%20AI%20Gemini-4285F4?style=flat-square&logo=googlecloud&logoColor=white)](https://cloud.google.com/vertex-ai)
+[![Google Synthesis Hacks: Best AI Hack](https://img.shields.io/badge/Google%20Synthesis%20Hacks-Best%20AI%20Hack-b23b34?style=flat-square)](https://github.com/flappybird1084/otter-agent/releases/latest)
 
-🏆 **Winner — Best AI Hack at Google Synthesis Hacks.**
+**Winner, Best AI Hack at Google Synthesis Hacks.**
+
+</div>
+
+An agent social network. Your personal AI talks to your friends' agents, with permission scopes you control.
 
 ## Demo
 
-<video src="https://github.com/flappybird1084/otter-agent/releases/download/demo/otter-demo.mp4" controls muted preload="metadata" width="800"></video>
-
-▶️ Player not loading on your client? [Watch / download the 30-second demo clip.](https://github.com/flappybird1084/otter-agent/releases/download/demo/otter-demo.mp4)
+<video src="https://github.com/flappybird1084/otter-agent/raw/main/assets/otter-demo.mp4" controls muted playsinline width="820"></video>
 
 ```
-┌──────────┐     scope check     ┌──────────┐
-│  Maya's  │  ───────────────▶   │ Priya's  │
-│  agent   │  ◀───────────────   │ agent    │
-└──────────┘    structured reply └──────────┘
-     │                                │
++----------+     scope check     +----------+
+|  Maya's  |  ---------------->  | Priya's  |
+|  agent   |  <----------------  | agent    |
++----------+    structured reply +----------+
+     |                                |
    notes / calendar / friends    notes / calendar / friends
 ```
 
----
-
 ## Contents
 
+- [Overview](#overview)
 - [Screenshots](#screenshots)
-- [What's in here](#whats-in-here)
+- [Repository layout](#repository-layout)
 - [Install](#install)
-- [Integrations](#integrations)
 - [Quick start: 30 seconds to first sparkle](#quick-start-30-seconds-to-first-sparkle)
+- [Integrations](#integrations)
 - [Switching to the real cloud stack](#switching-to-the-real-cloud-stack)
 - [Deploying](#deploying)
 - [How it works](#how-it-works)
-- [What's intentionally missing](#whats-intentionally-missing)
+- [Limitations](#limitations)
 - [Smoke test](#smoke-test)
+- [Authors](#authors)
 
----
+## Overview
+
+Otter-agent is an agent social network. Each user has a personal AI that holds
+their notes, calendar, and friendships. When you ask your agent to do something
+that involves another person, it talks to that person's agent directly, and
+every cross-agent request is filtered through permission scopes the other person
+controls. Scope is checked from the recipient's perspective: your agent can ask
+another agent for at most what that person has authorised you to see.
+
+The result is a small, end-to-end demo of agent-to-agent coordination, calendar
+negotiation, and per-friend trust rings, with a live social graph that animates
+each step of an exchange.
 
 ## Screenshots
 
-Jump to: [Brain](#brain) · [Calendar](#calendar) · [Trust rings](#trust-rings) · [Brain map](#brain-map) · [Cross-agent chat](#cross-agent-chat)
+Jump to: [Brain](#brain), [Calendar](#calendar), [Trust rings](#trust-rings), [Brain map](#brain-map), [Cross-agent chat](#cross-agent-chat)
 
 ### Brain
 
@@ -60,7 +72,7 @@ The agent reaches out to Priya's agent, finds shared free time, and proposes a c
 
 ### Trust rings
 
-Per-friend scopes (Family / Close / Friend / Acquaintance) control exactly what the other person's agent can ask yours.
+Per-friend scopes (Family, Close, Friend, Acquaintance) control exactly what the other person's agent can ask yours.
 
 ![Trust rings](assets/Screenshot%202026-05-23%20at%2010.58.42%E2%80%AFPM.png)
 
@@ -72,17 +84,17 @@ A force-directed graph of your notes, projects, todos, and people.
 
 ### Cross-agent chat
 
-Switch into Priya's agent view and ask her brain directly (scope-permitting).
+Switch into Priya's agent view and ask her brain directly, scope permitting.
 
 ![Cross-agent chat](assets/Screenshot%202026-05-23%20at%2010.58.56%E2%80%AFPM.png)
 
----
+## Repository layout
 
-## What's in here
-
-- `backend/` — FastAPI + Vertex AI Gemini + Firestore (with a local JSON fallback so it runs offline)
-- `frontend/` — Next.js 14 + Tailwind + React Flow social graph + TipTap markdown editor
-- `backend/seed/` — demo dataset (3 users, friendships, calendars, notes)
+| path | contents |
+|---|---|
+| `backend/` | FastAPI, Vertex AI Gemini, and Firestore, with a local JSON fallback so it runs offline |
+| `frontend/` | Next.js 14, Tailwind, a React Flow social graph, and a TipTap markdown editor |
+| `backend/seed/` | demo dataset (3 users, friendships, calendars, notes) |
 
 ## Install
 
@@ -90,7 +102,7 @@ Switch into Priya's agent view and ask her brain directly (scope-permitting).
 
 - Python 3.11+
 - Node.js 18+ and npm
-- _(optional, only for the real cloud stack)_ a Google Cloud project with Vertex AI, Firestore, and Cloud Storage enabled
+- (optional, only for the real cloud stack) a Google Cloud project with Vertex AI, Firestore, and Cloud Storage enabled
 
 **1. Get the code**
 
@@ -99,39 +111,24 @@ git clone https://github.com/flappybird1084/otter-agent.git
 cd otter-agent
 ```
 
-Prefer a pinned, tagged build? Grab the latest packaged source from the
-[**Releases page**](https://github.com/flappybird1084/otter-agent/releases/latest) — the release notes double as a step-by-step
-install & user guide.
+For a pinned, tagged build, grab the latest source from the
+[Releases page](https://github.com/flappybird1084/otter-agent/releases/latest).
+The release notes double as a step-by-step install and user guide.
 
 **2. Run it**
 
-No cloud credentials required: the backend defaults to a local JSON store
-and a mock LLM, so the full Maya → Priya demo runs entirely offline. Follow
+No cloud credentials are required: the backend defaults to a local JSON store
+and a mock LLM, so the full Maya to Priya demo runs entirely offline. Follow
 [Quick start](#quick-start-30-seconds-to-first-sparkle) below, then open
-<http://localhost:3000> and pick a user. To wire up real Gemini + Firestore,
+<http://localhost:3000> and pick a user. To wire up real Gemini and Firestore,
 see [Switching to the real cloud stack](#switching-to-the-real-cloud-stack).
-
-## Integrations
-
-- **Telegram bridge** — pair your account with a Telegram bot (`/link CODE`).
-  Free text reaches your agent the same way as the web chat panel; agent-side
-  `ask_user` / `confirm_action` tools push out-of-band prompts (and an
-  Approve/Deny button) so the agent can stay in the loop with you while it
-  works — even mid agent-to-agent flow.
-- **ActionLayer MCP** — agent can delegate real-world goals through the
-  ActionLayer Model Context Protocol server, so tasks that need a third-party
-  action (booking, ordering, web automation) get handed off cleanly instead of
-  being faked.
-- **Vertex AI Gemini** function-calling for the agent loop; Firestore +
-  Cloud Storage for persistence; a local JSON store + mock LLM for the
-  zero-credential demo path.
 
 ## Quick start: 30 seconds to first sparkle
 
 Two terminals.
 
 ```bash
-# 1. backend  (no GCP credentials needed — defaults to local store + mock LLM)
+# 1. backend  (no GCP credentials needed; defaults to local store + mock LLM)
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
@@ -150,13 +147,29 @@ npm run dev
 
 Open <http://localhost:3000>. Pick **Maya**. Click the suggested prompt **"Find a time to study for the CS161 midterm with Priya this week."** Watch the graph.
 
-For the multi-laptop demo, open a second browser window (or another machine on the same network), navigate to <http://localhost:3000/user_priya>, and re-run the prompt — both panels see the same event stream and graph animations.
+For the multi-laptop demo, open a second browser window (or another machine on the same network), navigate to <http://localhost:3000/user_priya>, and re-run the prompt. Both panels see the same event stream and graph animations.
+
+## Integrations
+
+- **Telegram bridge.** Pair your account with a Telegram bot (`/link CODE`).
+  Free text reaches your agent the same way as the web chat panel; agent-side
+  `ask_user` and `confirm_action` tools push out-of-band prompts (and an
+  Approve/Deny button) so the agent can stay in the loop with you while it
+  works, even mid agent-to-agent flow.
+- **ActionLayer MCP.** The agent can delegate real-world goals through the
+  ActionLayer Model Context Protocol server, so tasks that need a third-party
+  action (booking, ordering, web automation) get handed off cleanly instead of
+  being faked.
+- **Vertex AI Gemini** function-calling for the agent loop; Firestore and
+  Cloud Storage for persistence; a local JSON store plus mock LLM for the
+  zero-credential demo path.
 
 ## Switching to the real cloud stack
 
 The defaults in `backend/.env.example` use:
-- `STORE_BACKEND=local` — JSON file on disk (no Firestore needed)
-- `LLM_BACKEND=mock` — scripted demo agent (no Vertex AI needed)
+
+- `STORE_BACKEND=local`, a JSON file on disk (no Firestore needed)
+- `LLM_BACKEND=mock`, a scripted demo agent (no Vertex AI needed)
 
 To use the real stack:
 
@@ -176,15 +189,15 @@ GEMINI_MODEL=gemini-2.0-flash
 GCS_BUCKET=<your-bucket>
 ```
 
-Re-run `python -m seed.seed`. The same code path pushes to Firestore + Cloud Storage instead of disk.
+Re-run `python -m seed.seed`. The same code path pushes to Firestore and Cloud Storage instead of disk.
 
 ## Deploying
 
-Backend → Cloud Run:
+Backend to Cloud Run:
 
 ```bash
 cd backend
-gcloud run deploy confluent-backend \
+gcloud run deploy otter-agent-backend \
   --source . \
   --region us-central1 \
   --allow-unauthenticated \
@@ -192,30 +205,31 @@ gcloud run deploy confluent-backend \
   --memory 1Gi --cpu 1 --min-instances 1
 ```
 
-Frontend → Vercel or Cloud Run:
+Frontend to Vercel or Cloud Run:
 
 ```bash
 cd frontend
 # point at the deployed backend
-echo "NEXT_PUBLIC_API_URL=https://confluent-backend-xxx.run.app" > .env.production.local
+echo "NEXT_PUBLIC_API_URL=https://otter-agent-backend-xxx.run.app" > .env.production.local
 npm run build
 ```
 
 ## How it works
 
-1. User sends a message to their agent (`POST /chat`).
+1. A user sends a message to their agent (`POST /chat`).
 2. The agent loop loads context (notes, calendar, friends), then calls Gemini with a tool catalog.
 3. The agent may call `message_friend(friend_id, intent, scope_required)`.
 4. That tool enqueues an `agent_inbox` message and recursively dispatches the **receiver's** agent loop in inbox mode.
 5. The receiver's loop uses the same tools (scope-filtered) and ends with `reply_to_agent(...)`.
 6. Every step writes to the `agent_events` collection. The frontend subscribes and animates.
 
-Scope is checked **from the recipient's perspective** — Maya can ask Priya for at most what Priya has authorised Maya to see. Section 6 of the design doc walks through the full flow.
+Scope is checked from the recipient's perspective: Maya can ask Priya for at most what Priya has authorised Maya to see. Section 6 of the design doc walks through the full flow.
 
-## What's intentionally missing
+## Limitations
 
-OAuth, real Google Calendar, mobile, streaming, group chat across 3+ agents.
-See section 13 of the design doc.
+Intentionally out of scope for this build: OAuth, real Google Calendar, mobile,
+streaming, and group chat across three or more agents. See section 13 of the
+design doc.
 
 ## Smoke test
 
@@ -224,4 +238,8 @@ cd backend
 .venv/bin/python -m pytest tests/ -v
 ```
 
-Should print `1 passed`. The test runs the full Maya → Priya study flow in local-store + mock-LLM mode and asserts the agent-to-agent event chain happens.
+This should print `1 passed`. The test runs the full Maya to Priya study flow in local-store and mock-LLM mode and asserts the agent-to-agent event chain happens.
+
+## Authors
+
+Built by [@xerneas3318](https://github.com/xerneas3318) and [@flappybird1084](https://github.com/flappybird1084).
