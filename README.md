@@ -1,10 +1,20 @@
 # Confluent
 
+> An agent social network. Your personal AI talks to your friends' agents — with permission scopes you control.
+
+[![🏆 Best AI Hack — Google Synthesis Hacks](https://img.shields.io/badge/%F0%9F%8F%86%20Best%20AI%20Hack-Google%20Synthesis%20Hacks-4285F4?style=for-the-badge)](https://github.com/flappybird1084/otter-agent/releases/latest)
+&nbsp;
+![Backend: FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688)
+![Frontend: Next.js 14](https://img.shields.io/badge/Frontend-Next.js%2014-000000)
+![LLM: Vertex AI Gemini](https://img.shields.io/badge/LLM-Vertex%20AI%20Gemini-8E75B2)
+
+🏆 **Winner — Best AI Hack at Google Synthesis Hacks.**
+
 ## Demo
 
-<video src="./assets/Otter%20Agent%20compressed.mp4" controls width="800"></video>
+<video src="https://github.com/flappybird1084/otter-agent/releases/download/demo/otter-demo.mp4" controls muted preload="metadata" width="800"></video>
 
-An agent social network. Your personal AI talks to your friends' agents — with permission scopes you control. Hackathon build.
+▶️ Player not loading on your client? [Watch / download the 30-second demo clip.](https://github.com/flappybird1084/otter-agent/releases/download/demo/otter-demo.mp4)
 
 ```
 ┌──────────┐     scope check     ┌──────────┐
@@ -21,8 +31,9 @@ An agent social network. Your personal AI talks to your friends' agents — with
 
 - [Screenshots](#screenshots)
 - [What's in here](#whats-in-here)
+- [Install](#install)
 - [Integrations](#integrations)
-- [Demo: 30 seconds to first sparkle](#demo-30-seconds-to-first-sparkle)
+- [Quick start: 30 seconds to first sparkle](#quick-start-30-seconds-to-first-sparkle)
 - [Switching to the real cloud stack](#switching-to-the-real-cloud-stack)
 - [Deploying](#deploying)
 - [How it works](#how-it-works)
@@ -73,6 +84,33 @@ Switch into Priya's agent view and ask her brain directly (scope-permitting).
 - `frontend/` — Next.js 14 + Tailwind + React Flow social graph + TipTap markdown editor
 - `backend/seed/` — demo dataset (3 users, friendships, calendars, notes)
 
+## Install
+
+**Prerequisites**
+
+- Python 3.11+
+- Node.js 18+ and npm
+- _(optional, only for the real cloud stack)_ a Google Cloud project with Vertex AI, Firestore, and Cloud Storage enabled
+
+**1. Get the code**
+
+```bash
+git clone https://github.com/flappybird1084/otter-agent.git
+cd otter-agent
+```
+
+Prefer a pinned, tagged build? Grab the latest packaged source from the
+[**Releases page**](https://github.com/flappybird1084/otter-agent/releases/latest) — the release notes double as a step-by-step
+install & user guide.
+
+**2. Run it**
+
+No cloud credentials required: the backend defaults to a local JSON store
+and a mock LLM, so the full Maya → Priya demo runs entirely offline. Follow
+[Quick start](#quick-start-30-seconds-to-first-sparkle) below, then open
+<http://localhost:3000> and pick a user. To wire up real Gemini + Firestore,
+see [Switching to the real cloud stack](#switching-to-the-real-cloud-stack).
+
 ## Integrations
 
 - **Telegram bridge** — pair your account with a Telegram bot (`/link CODE`).
@@ -88,7 +126,7 @@ Switch into Priya's agent view and ask her brain directly (scope-permitting).
   Cloud Storage for persistence; a local JSON store + mock LLM for the
   zero-credential demo path.
 
-## Demo: 30 seconds to first sparkle
+## Quick start: 30 seconds to first sparkle
 
 Two terminals.
 
