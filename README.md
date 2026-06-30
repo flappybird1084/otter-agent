@@ -7,11 +7,11 @@
 [![LLM: Vertex AI Gemini](https://img.shields.io/badge/LLM-Vertex%20AI%20Gemini-4285F4?style=flat-square&logo=googlecloud&logoColor=white)](https://cloud.google.com/vertex-ai)
 [![Google Synthesis Hacks: Best AI Hack](https://img.shields.io/badge/Google%20Synthesis%20Hacks-Best%20AI%20Hack-b23b34?style=flat-square)](https://github.com/flappybird1084/otter-agent/releases/latest)
 
+</div>
+
 **Winner, Best AI Hack at Google Synthesis Hacks.**
 
-An agent social network. Your personal AI talks to your friends' agents, with permission scopes you control.
-
-</div>
+> An agent social network. Your personal AI talks to your friends' agents, with permission scopes you control.
 
 ## Demo
 
