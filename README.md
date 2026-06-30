@@ -9,22 +9,26 @@
 
 **Winner, Best AI Hack at Google Synthesis Hacks.**
 
-</div>
-
 An agent social network. Your personal AI talks to your friends' agents, with permission scopes you control.
+
+</div>
 
 ## Demo
 
+<div align="center">
+
 <video src="https://github.com/flappybird1084/otter-agent/raw/main/assets/otter-demo.mp4" controls muted playsinline width="820"></video>
 
-```
+<pre>
 +----------+     scope check     +----------+
-|  Maya's  |  ---------------->  | Priya's  |
-|  agent   |  <----------------  | agent    |
+|  Maya's  |  ----------------&gt;  | Priya's  |
+|  agent   |  &lt;----------------  | agent    |
 +----------+    structured reply +----------+
      |                                |
    notes / calendar / friends    notes / calendar / friends
-```
+</pre>
+
+</div>
 
 ## Contents
 
@@ -56,37 +60,61 @@ each step of an exchange.
 
 ## Screenshots
 
-Jump to: [Brain](#brain), [Calendar](#calendar), [Trust rings](#trust-rings), [Brain map](#brain-map), [Cross-agent chat](#cross-agent-chat)
+<div align="center">
+
+[Brain](#brain) &nbsp;&middot;&nbsp; [Calendar](#calendar) &nbsp;&middot;&nbsp; [Trust rings](#trust-rings) &nbsp;&middot;&nbsp; [Brain map](#brain-map) &nbsp;&middot;&nbsp; [Cross-agent chat](#cross-agent-chat)
+
+</div>
 
 ### Brain
 
+<div align="center">
+
 Markdown notes with the agent panel on the right. Ask "who are my friends?" and it pulls from your contacts.
 
-![Brain view](assets/Screenshot%202026-05-23%20at%2010.58.23%E2%80%AFPM.png)
+<img src="assets/Screenshot%202026-05-23%20at%2010.58.23%E2%80%AFPM.png" width="820" alt="Brain view" />
+
+</div>
 
 ### Calendar
 
+<div align="center">
+
 The agent reaches out to Priya's agent, finds shared free time, and proposes a calendar event for you to confirm.
 
-![Calendar view](assets/Screenshot%202026-05-23%20at%2010.58.34%E2%80%AFPM.png)
+<img src="assets/Screenshot%202026-05-23%20at%2010.58.34%E2%80%AFPM.png" width="820" alt="Calendar view" />
+
+</div>
 
 ### Trust rings
 
+<div align="center">
+
 Per-friend scopes (Family, Close, Friend, Acquaintance) control exactly what the other person's agent can ask yours.
 
-![Trust rings](assets/Screenshot%202026-05-23%20at%2010.58.42%E2%80%AFPM.png)
+<img src="assets/Screenshot%202026-05-23%20at%2010.58.42%E2%80%AFPM.png" width="820" alt="Trust rings" />
+
+</div>
 
 ### Brain map
 
+<div align="center">
+
 A force-directed graph of your notes, projects, todos, and people.
 
-![Brain map](assets/Screenshot%202026-05-23%20at%2010.58.49%E2%80%AFPM.png)
+<img src="assets/Screenshot%202026-05-23%20at%2010.58.49%E2%80%AFPM.png" width="820" alt="Brain map" />
+
+</div>
 
 ### Cross-agent chat
 
+<div align="center">
+
 Switch into Priya's agent view and ask her brain directly, scope permitting.
 
-![Cross-agent chat](assets/Screenshot%202026-05-23%20at%2010.58.56%E2%80%AFPM.png)
+<img src="assets/Screenshot%202026-05-23%20at%2010.58.56%E2%80%AFPM.png" width="820" alt="Cross-agent chat" />
+
+</div>
 
 ## Repository layout
 
@@ -242,4 +270,8 @@ This should print `1 passed`. The test runs the full Maya to Priya study flow in
 
 ## Authors
 
+<div align="center">
+
 Built by [@xerneas3318](https://github.com/xerneas3318) and [@flappybird1084](https://github.com/flappybird1084).
+
+</div>
