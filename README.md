@@ -270,8 +270,4 @@ This should print `1 passed`. The test runs the full Maya to Priya study flow in
 
 ## Authors
 
-<div align="center">
-
 Built by [@xerneas3318](https://github.com/xerneas3318) and [@flappybird1084](https://github.com/flappybird1084).
-
-</div>
