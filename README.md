@@ -17,7 +17,7 @@
 
 <div align="center">
 
-<video src="https://github.com/flappybird1084/otter-agent/raw/main/assets/otter-demo.mp4" controls muted playsinline width="820"></video>
+<video src="https://github.com/user-attachments/assets/9dbdbbd6-97e3-4e36-9147-9172568c795e" controls muted playsinline width="820"></video>
 
 <pre>
 +----------+     scope check     +----------+
